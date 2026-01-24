@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.DS_Store
+.cursor/
+terminals/
+*.log
+*.tmp
+
+# Local secrets / configs (add your own if needed)
+.env
+

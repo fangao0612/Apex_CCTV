@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<!-- saved from url=(0073)file:///E:/My%20Apps%20and%20Websites_E/CCTV/poe-preview%20(10).html#home -->
+<html lang="zh-CN" data-theme="dark"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta name="x-poe-datastore-behavior" content="local_only"><meta http-equiv="Content-Security-Policy" content="default-src &#39;self&#39; &#39;unsafe-inline&#39; &#39;unsafe-eval&#39; data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://code.jquery.com https://unpkg.com https://d3js.org https://threejs.org https://cdn.plot.ly https://stackpath.bootstrapcdn.com https://maps.googleapis.com https://cdn.tailwindcss.com https://ajax.googleapis.com https://kit.fontawesome.com https://cdn.datatables.net https://maxcdn.bootstrapcdn.com https://code.highcharts.com https://tako-static-assets-production.s3.amazonaws.com https://www.youtube.com https://fonts.googleapis.com https://fonts.gstatic.com https://pfst.cf2.poecdn.net https://puc.poecdn.net https://i.imgur.com https://wikimedia.org https://*.icons8.com https://*.giphy.com https://picsum.photos https://images.unsplash.com; frame-src &#39;self&#39; https://www.youtube.com https://trytako.com; child-src &#39;self&#39;; manifest-src &#39;self&#39;; worker-src &#39;self&#39;; upgrade-insecure-requests; block-all-mixed-content;">
+  
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Notion-like Simple Console（Day/Night）</title>
+  <style>
+    /* =========================
+      Notion-like: 简单、朴实、弱装饰
+      - 纯净背景 + 轻边框
+      - 少阴影、少渐变
+      - 字号/行高/留白更像 Notion
+      - 日夜主题：同一套 token
+    ========================== */
+    :root{
+      --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "PingFang SC","Microsoft YaHei","Noto Sans CJK SC","Helvetica Neue", Arial;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+
+      --radius-lg: 14px;
+      --radius-md: 10px;
+      --radius-sm: 8px;
+
+      --ease: cubic-bezier(.2,.8,.2,1);
+      --dur: 140ms;
+    }
+
+    /* Light (default) */
+    html[data-theme="light"]{
+      color-scheme: light;
+      --bg: #ffffff;
+      --bg2:#fafafa;
+      --panel:#ffffff;
+
+      --text:#111111;
+      --muted:#6b6b6b;
+      --muted2:#8a8a8a;
+
+      --border:#e8e8e8;
+      --border2:#dddddd;
+
+      --hover:#f3f3f3;
+      --active:#ededed;
+
+      --accent:#2f6feb; /* 很克制的蓝，仅用于链接/主按钮 */
+      --danger:#d1242f;
+      --ok:#1a7f37;
+
+      --shadow: 0 1px 2px rgba(0,0,0,.06);
+    }
+
+    /* Dark */
+    html[data-theme="dark"]{
+      color-scheme: dark;
+      --bg:#0f0f10;
+      --bg2:#141415;
+      --panel:#121213;
+
+      --text:#f2f2f2;
+      --muted:#b3b3b3;
+      --muted2:#8a8a8a;
+
+      --border:#242427;
+      --border2:#2d2d31;
+
+      --hover:#1a1a1c;
+      --active:#202023;
+
+      --accent:#6ea8ff;
+      --danger:#ff6b74;
+      --ok:#6ee7a8;
+
+      --shadow: 0 1px 2px rgba(0,0,0,.35);
+    }
+
+    *{ box-sizing:border-box; }
+    html,body{ height:100%; }
+    body{
+      margin:0;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    a{ color: var(--accent); text-decoration:none; }
+    a:hover{ text-decoration:underline; }
+
+    .app{
+      min-height:100%;
+      display:flex;
+      flex-direction:column;
+    }
+
+    /* Top bar (Notion-like minimal) */
+    .topbar{
+      position:sticky; top:0; z-index:30;
+      background: color-mix(in oklab, var(--bg) 92%, transparent);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-bottom:1px solid var(--border);
+    }
+    .topbar-inner{
+      max-width: 1200px;
+      margin:0 auto;
+      padding: 10px 14px;
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+
+    .brand{
+      display:flex; align-items:center; gap:10px;
+      min-width: 180px;
+    }
+    .logo{
+      width:26px; height:26px;
+      border-radius: 7px;
+      background: var(--text);
+      opacity:.9;
+    }
+    .brand strong{ font-size:14px; font-weight:650; }
+    .brand small{ font-size:12px; color: var(--muted2); }
+
+    .nav{
+      display:flex;
+      gap:6px;
+      flex:1;
+      overflow:auto;
+      scrollbar-width:none;
+    }
+    .nav::-webkit-scrollbar{ display:none; }
+
+    .nav a{
+      display:flex; align-items:center;
+      padding: 7px 10px;
+      border-radius: 8px;
+      color: var(--muted);
+      text-decoration:none;
+      transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+      white-space:nowrap;
+      font-size:13px;
+    }
+    .nav a:hover{ background: var(--hover); color: var(--text); }
+    .nav a.active{ background: var(--active); color: var(--text); }
+
+    .right{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      justify-content:flex-end;
+      min-width: 240px;
+    }
+
+    .search{
+      display:flex; align-items:center; gap:8px;
+      padding: 7px 10px;
+      border-radius: 10px;
+      border:1px solid var(--border);
+      background: var(--bg2);
+      width: 280px;
+      max-width: 44vw;
+    }
+    .search input{
+      border:0; outline:0; background:transparent;
+      width:100%;
+      color: var(--text);
+      font-size:13px;
+    }
+    .kbd{
+      font-family: var(--mono);
+      font-size:12px;
+      color: var(--muted2);
+      border:1px solid var(--border);
+      background: var(--panel);
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+
+    .iconbtn{
+      height:32px; min-width:32px;
+      padding: 0 10px;
+      border-radius: 10px;
+      border:1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      cursor:pointer;
+      transition: background var(--dur) var(--ease);
+      box-shadow: var(--shadow);
+      font-size:13px;
+    }
+    .iconbtn:hover{ background: var(--hover); }
+
+    /* Layout */
+    .wrap{
+      max-width: 1200px;
+      margin:0 auto;
+      width:100%;
+      padding: 14px;
+      display:grid;
+      grid-template-columns: 260px 1fr;
+      gap:14px;
+      flex:1;
+    }
+
+    @media (max-width: 900px){
+      .wrap{ grid-template-columns: 1fr; }
+      .search{ width:100%; max-width:none; }
+      .right{ width:100%; min-width:0; }
+      .topbar-inner{ flex-wrap:wrap; }
+      .brand{ min-width:0; }
+    }
+
+    .panel{
+      border:1px solid var(--border);
+      border-radius: var(--radius-lg);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+    }
+    .panel-h{
+      padding: 12px 12px 10px;
+      border-bottom:1px solid var(--border);
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .panel-h h3{
+      margin:0;
+      font-size:13px;
+      font-weight:650;
+    }
+    .panel-h p{
+      margin:4px 0 0;
+      font-size:12px;
+      color: var(--muted);
+    }
+
+    /* Sidebar list (Notion-ish) */
+    .side{
+      display:flex;
+      flex-direction:column;
+    }
+    .side-body{ padding: 10px; display:flex; flex-direction:column; gap:6px; }
+
+    .side-item{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      color: var(--text);
+      cursor:pointer;
+      transition: background var(--dur) var(--ease);
+      font-size:13px;
+    }
+    .side-item:hover{ background: var(--hover); }
+    .side-item.active{ background: var(--active); }
+    .side-item .meta{ color: var(--muted2); font-size:12px; }
+
+    .side-filter{
+      display:flex; gap:8px; align-items:center;
+      padding: 8px 10px;
+      border:1px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg2);
+    }
+    .side-filter input{
+      width:100%;
+      border:0; outline:0; background:transparent;
+      font-size:13px;
+      color: var(--text);
+    }
+
+    /* Main content */
+    .main{
+      display:flex;
+      flex-direction:column;
+      gap:14px;
+      min-width:0;
+    }
+
+    .page{
+      padding: 14px;
+    }
+
+    .title{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom: 10px;
+    }
+    .title h1{
+      margin:0;
+      font-size:20px;
+      letter-spacing:.2px;
+      font-weight:700;
+    }
+    .title .sub{
+      margin-top:6px;
+      color: var(--muted);
+      font-size:13px;
+      line-height:1.5;
+    }
+
+    .btn{
+      padding: 7px 10px;
+      border-radius: 10px;
+      border:1px solid var(--border);
+      background: var(--panel);
+      cursor:pointer;
+      transition: background var(--dur) var(--ease);
+      font-size:13px;
+      box-shadow: var(--shadow);
+      color: var(--text);
+    }
+    .btn:hover{ background: var(--hover); }
+
+    .btn.primary{
+      background: var(--accent);
+      border-color: color-mix(in oklab, var(--accent) 70%, var(--border));
+      color: white;
+    }
+    html[data-theme="dark"] .btn.primary{ color: #0b0b0c; }
+
+    .grid{
+      display:grid;
+      grid-template-columns: repeat(3, minmax(0,1fr));
+      gap:10px;
+    }
+    @media (max-width: 900px){ .grid{ grid-template-columns: 1fr; } }
+
+    .card{
+      border:1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--panel);
+      padding: 12px;
+      box-shadow: var(--shadow);
+    }
+    .card .k{ font-size:12px; color: var(--muted); }
+    .card .v{ margin-top:6px; font-size:18px; font-weight:700; }
+    .card .s{ margin-top:6px; font-size:12px; color: var(--muted2); }
+
+    /* Table */
+    .table-wrap{
+      overflow:auto;
+      border:1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    table{
+      width:100%;
+      border-collapse: collapse;
+      min-width: 720px;
+    }
+    th,td{
+      padding: 10px 10px;
+      border-bottom:1px solid var(--border);
+      text-align:left;
+      font-size:13px;
+      color: var(--text);
+      white-space:nowrap;
+    }
+    th{
+      font-weight:650;
+      color: var(--muted);
+      background: var(--bg2);
+    }
+    tr:hover td{ background: var(--hover); }
+
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border:1px solid var(--border);
+      font-size:12px;
+      color: var(--muted);
+      background: var(--panel);
+    }
+    .pill.ok{ color: color-mix(in oklab, var(--ok) 80%, var(--text)); border-color: color-mix(in oklab, var(--ok) 35%, var(--border)); }
+    .pill.warn{ color: color-mix(in oklab, var(--danger) 70%, var(--text)); border-color: color-mix(in oklab, var(--danger) 30%, var(--border)); }
+
+    .footerhint{
+      padding: 10px 14px;
+      border-top:1px solid var(--border);
+      color: var(--muted2);
+      font-size:12px;
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="logo" aria-hidden="true"></div>
+        <div style="display:flex; flex-direction:column; line-height:1.1;">
+          <strong>Apex CCTV</strong>
+          <small>Simple Console</small>
+        </div>
+      </div>
+
+      <nav class="nav" aria-label="导航">
+        <a href="file:///E:/My%20Apps%20and%20Websites_E/CCTV/poe-preview%20(10).html#home" data-route="home" class="active">首页</a>
+        <a href="file:///E:/My%20Apps%20and%20Websites_E/CCTV/poe-preview%20(10).html#video" data-route="video">视频</a>
+        <a href="file:///E:/My%20Apps%20and%20Websites_E/CCTV/poe-preview%20(10).html#device" data-route="device">设备</a>
+        <a href="file:///E:/My%20Apps%20and%20Websites_E/CCTV/poe-preview%20(10).html#user" data-route="user">用户</a>
+        <a href="file:///E:/My%20Apps%20and%20Websites_E/CCTV/poe-preview%20(10).html#gallery" data-route="gallery">图库</a>
+        <a href="file:///E:/My%20Apps%20and%20Websites_E/CCTV/poe-preview%20(10).html#settings" data-route="settings">配置</a>
+      </nav>
+
+      <div class="right">
+        <div class="search" role="search">
+          <span style="color:var(--muted);">⌕</span>
+          <input id="q" placeholder="搜索…">
+          <span class="kbd">Ctrl K</span>
+        </div>
+        <button class="iconbtn" id="themeBtn" title="切换日/夜">主题</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <!-- Sidebar -->
+    <aside class="panel side" aria-label="侧边栏">
+      <div class="panel-h">
+        <div>
+          <h3 id="sideTitle">快捷入口</h3>
+          <p id="sideDesc">你可以把这里当作“页面列表”。</p>
+        </div>
+        <button class="btn" id="addLeft">添加</button>
+      </div>
+
+      <div class="side-body">
+        <div class="side-filter">
+          <span style="color:var(--muted);">⌕</span>
+          <input id="sideSearch" placeholder="筛选…">
+        </div>
+
+        <div id="sideList" style="display:flex; flex-direction:column; gap:4px;">
+          <div class="side-item active" data-item="大华枪机"><span>大华枪机</span><span class="meta">(1/1)</span></div>
+          <div class="side-item" data-item="澳洲测试"><span>澳洲测试</span><span class="meta">(2/2)</span></div>
+          <div class="side-item" data-item="临沂30测试"><span>临沂30测试</span><span class="meta">(2/2)</span></div>
+          <div class="side-item" data-item="卖售"><span>卖售</span><span class="meta">(0/2)</span></div>
+        </div>
+      </div>
+
+      <div class="footerhint">
+        <div>提示：这是“Notion 风”的克制版本</div>
+        <div><span class="kbd">Esc</span> <span style="margin-left:6px;" class="kbd">Ctrl K</span></div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="panel main" aria-label="主内容">
+      <div class="page">
+        <div class="title">
+          <div style="min-width:0;">
+            <h1 id="pageTitle">首页</h1>
+            <div class="sub" id="pageSub">信息密度适中，交互克制，尽量像 Notion。</div>
+          </div>
+          <div style="display:flex; gap:8px; flex:0 0 auto;">
+            <button class="btn" id="exportBtn">导出</button>
+            <button class="btn primary" id="primaryBtn">新建</button>
+          </div>
+        </div>
+
+        <div class="grid" id="cards">
+      <div class="card">
+        <div class="k">在线设备</div>
+        <div class="v">128</div>
+        <div class="s">今日 +6</div>
+      </div>
+    
+      <div class="card">
+        <div class="k">未处理告警</div>
+        <div class="v">7</div>
+        <div class="s">高优先级 2</div>
+      </div>
+    
+      <div class="card">
+        <div class="k">存储占用</div>
+        <div class="v">63%</div>
+        <div class="s">预计可用 12 天</div>
+      </div>
+    </div>
+
+        <div style="height:12px;"></div>
+
+        <div class="table-wrap" id="tableWrap">
+      <table role="table" aria-label="数据表">
+        <thead><tr><th>模块</th><th>说明</th><th>状态</th></tr></thead>
+        <tbody>
+          <tr><td>视频</td><td>实时预览 / 回放 / 多通道</td><td><span class="pill ok">正常</span></td></tr><tr><td>设备</td><td>接入 / 分组 / 通道</td><td><span class="pill ok">正常</span></td></tr><tr><td>告警</td><td>规则 / 留存 / 检索</td><td><span class="pill warn">需关注</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+  // ============ Theme ============
+  const html = document.documentElement;
+  const themeBtn = document.getElementById("themeBtn");
+
+  function setTheme(t){
+    html.setAttribute("data-theme", t);
+    try{ localStorage.setItem("theme", t); }catch(e){}
+  }
+  function initTheme(){
+    let t = "light";
+    try{
+      const saved = localStorage.getItem("theme");
+      if(saved === "light" || saved === "dark") t = saved;
+      else{
+        const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        t = prefersDark ? "dark" : "light";
+      }
+    }catch(e){}
+    setTheme(t);
+  }
+  themeBtn.addEventListener("click", ()=>{
+    const cur = html.getAttribute("data-theme") || "light";
+    setTheme(cur === "light" ? "dark" : "light");
+  });
+
+  // ============ Router ============
+  const navLinks = Array.from(document.querySelectorAll(".nav a"));
+
+  function setActive(route){
+    navLinks.forEach(a => a.classList.toggle("active", a.dataset.route === route));
+  }
+
+  function render(route){
+    setActive(route);
+
+    // Sidebar text
+    const sideTitle = document.getElementById("sideTitle");
+    const sideDesc  = document.getElementById("sideDesc");
+    const pageTitle = document.getElementById("pageTitle");
+    const pageSub   = document.getElementById("pageSub");
+
+    const cards = document.getElementById("cards");
+    const tableWrap = document.getElementById("tableWrap");
+
+    const clear = () => { cards.innerHTML=""; tableWrap.innerHTML=""; };
+
+    const card = (k,v,s)=>`
+      <div class="card">
+        <div class="k">${k}</div>
+        <div class="v">${v}</div>
+        <div class="s">${s}</div>
+      </div>
+    `;
+
+    const table = (head, rows)=>`
+      <table role="table" aria-label="数据表">
+        <thead><tr>${head.map(h=>`<th>${h}</th>`).join("")}</tr></thead>
+        <tbody>
+          ${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join("")}</tr>`).join("")}
+        </tbody>
+      </table>
+    `;
+
+    clear();
+
+    if(route === "home"){
+      sideTitle.textContent = "快捷入口";
+      sideDesc.textContent = "你可以把这里当作“页面列表”。";
+      pageTitle.textContent = "首页";
+      pageSub.textContent = "信息密度适中，交互克制，尽量像 Notion。";
+
+      cards.innerHTML = [
+        card("在线设备","128","今日 +6"),
+        card("未处理告警","7","高优先级 2"),
+        card("存储占用","63%","预计可用 12 天"),
+      ].join("");
+
+      tableWrap.innerHTML = table(
+        ["模块","说明","状态"],
+        [
+          ["视频","实时预览 / 回放 / 多通道","<span class='pill ok'>正常</span>"],
+          ["设备","接入 / 分组 / 通道","<span class='pill ok'>正常</span>"],
+          ["告警","规则 / 留存 / 检索","<span class='pill warn'>需关注</span>"],
+        ]
+      );
+    }
+
+    if(route === "video"){
+      sideTitle.textContent = "视频列表";
+      sideDesc.textContent = "左侧选择设备，右侧展示内容。";
+      pageTitle.textContent = "视频";
+      pageSub.textContent = "保留朴素的列表 + 表格，后续可接真实播放组件。";
+
+      cards.innerHTML = [
+        card("当前设备","大华枪机","点击左侧切换"),
+        card("编码","H.265","1080p"),
+        card("状态","在线","低延迟"),
+      ].join("");
+
+      tableWrap.innerHTML = table(
+        ["通道","名称","在线","操作"],
+        [
+          ["01","前门","<span class='pill ok'>在线</span>","查看 / 截图 / 录像"],
+          ["02","车库","<span class='pill ok'>在线</span>","查看 / 截图 / 录像"],
+          ["03","后院","<span class='pill warn'>离线</span>","查看 / 重试"],
+        ]
+      );
+    }
+
+    if(route === "device"){
+      sideTitle.textContent = "设备分组";
+      sideDesc.textContent = "简单分组列表（可扩展树形）。";
+      pageTitle.textContent = "设备";
+      pageSub.textContent = "Notion 风格：更少组件、更清晰层级。";
+
+      cards.innerHTML = [
+        card("平台","3","生产/海外/测试"),
+        card("通道数","56","可用 48"),
+        card("接入方式","RTSP/GB28181","可扩展"),
+      ].join("");
+
+      tableWrap.innerHTML = table(
+        ["序号","平台名称","地址","通道","告警","状态"],
+        [
+          ["01","Apex CCTV-华北","10.0.0.12","32","开启","<span class='pill ok'>运行中</span>"],
+          ["02","Apex CCTV-海外","10.2.1.8","16","开启","<span class='pill ok'>运行中</span>"],
+          ["03","测试环境","127.0.0.1","8","关闭","<span class='pill warn'>停用</span>"],
+        ]
+      );
+    }
+
+    if(route === "user"){
+      sideTitle.textContent = "用户列表";
+      sideDesc.textContent = "更像 Notion 的成员管理。";
+      pageTitle.textContent = "用户";
+      pageSub.textContent = "用表格表达权限与状态（少花活）。";
+
+      cards.innerHTML = [
+        card("总用户","19","含只读 6"),
+        card("角色","4","管理员/运维/审计/只读"),
+        card("登录失败","2","24 小时内"),
+      ].join("");
+
+      tableWrap.innerHTML = table(
+        ["用户名","角色","状态","最近登录","操作"],
+        [
+          ["admin","超级管理员","<span class='pill ok'>启用</span>","今天 10:12","编辑 / 禁用"],
+          ["ops_01","运维","<span class='pill ok'>启用</span>","昨天 18:40","编辑 / 禁用"],
+          ["viewer","只读","<span class='pill warn'>禁用</span>","—","编辑 / 启用"],
+        ]
+      );
+    }
+
+    if(route === "gallery"){
+      sideTitle.textContent = "告警分类";
+      sideDesc.textContent = "网关 / 协议 / 1400（可扩展）。";
+      pageTitle.textContent = "图库";
+      pageSub.textContent = "把告警当作“数据库行”，Notion 风最适合。";
+
+      cards.innerHTML = [
+        card("今日告警","28","待处理 7"),
+        card("留存天数","30","可按策略变化"),
+        card("检索","按设备/规则/时间","快速定位"),
+      ].join("");
+
+      tableWrap.innerHTML = table(
+        ["时间","设备","类型","级别","状态"],
+        [
+          ["12:16:16","大华枪机","运动目标","高","<span class='pill warn'>未处理</span>"],
+          ["12:07:08","澳洲测试","越界","中","<span class='pill ok'>已确认</span>"],
+          ["11:59:05","临沂30测试","遮挡","中","<span class='pill ok'>已确认</span>"],
+        ]
+      );
+    }
+
+    if(route === "settings"){
+      sideTitle.textContent = "配置项";
+      sideDesc.textContent = "把配置当作页面/块。";
+      pageTitle.textContent = "配置";
+      pageSub.textContent = "简单表单也可以做得像 Notion：弱边框 + 留白 + 清晰标签。";
+
+      cards.innerHTML = [
+        card("系统名称","Apex CCTV","可修改"),
+        card("时区","Asia/Shanghai","建议固定"),
+        card("审计日志","开启","合规需要"),
+      ].join("");
+
+      tableWrap.innerHTML = table(
+        ["配置项","当前值","说明"],
+        [
+          ["录像保留(天)","30","影响存储占用"],
+          ["告警等级阈值","中","影响提醒强度"],
+          ["Webhook","未配置","用于外部联动"],
+        ]
+      );
+    }
+  }
+
+  function currentRoute(){
+    const r = (location.hash || "#home").slice(1);
+    return ["home","video","device","user","gallery","settings"].includes(r) ? r : "home";
+  }
+
+  window.addEventListener("hashchange", ()=> render(currentRoute()));
+
+  // ============ Sidebar interactions ============
+  const sideSearch = document.getElementById("sideSearch");
+  sideSearch.addEventListener("input", (e)=>{
+    const q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll(".side-item").forEach(it=>{
+      const name = it.dataset.item.toLowerCase();
+      it.style.display = name.includes(q) ? "" : "none";
+    });
+  });
+
+  document.querySelectorAll(".side-item").forEach(it=>{
+    it.addEventListener("click", ()=>{
+      document.querySelectorAll(".side-item").forEach(x=>x.classList.remove("active"));
+      it.classList.add("active");
+      if(currentRoute()==="video"){
+        // 在视频页时，左侧切换会反映到卡片
+        const name = it.dataset.item;
+        const cards = document.getElementById("cards");
+        const first = cards.querySelector(".card");
+        if(first){
+          first.querySelector(".v").textContent = name;
+          first.querySelector(".s").textContent = "点击左侧切换";
+        }
+      }
+    });
+  });
+
+  // shortcuts
+  document.addEventListener("keydown",(e)=>{
+    if((e.ctrlKey || e.metaKey) && e.key.toLowerCase()==="k"){
+      e.preventDefault();
+      document.getElementById("q").focus();
+    }
+  });
+
+  // init
+  initTheme();
+  render(currentRoute());
+</script>
+
+
+</body></html>

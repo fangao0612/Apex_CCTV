@@ -1,0 +1,1866 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta name="x-poe-datastore-behavior" content="local_only"><meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: http://13.238.254.66:18000 http://127.0.0.1:9000 ws://13.238.254.66:18000 ws://127.0.0.1:9000 https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://code.jquery.com https://unpkg.com https://d3js.org https://threejs.org https://cdn.plot.ly https://stackpath.bootstrapcdn.com https://maps.googleapis.com https://cdn.tailwindcss.com https://ajax.googleapis.com https://kit.fontawesome.com https://cdn.datatables.net https://maxcdn.bootstrapcdn.com https://code.highcharts.com https://tako-static-assets-production.s3.amazonaws.com https://www.youtube.com https://fonts.googleapis.com https://fonts.gstatic.com https://pfst.cf2.poecdn.net https://puc.poecdn.net https://i.imgur.com https://wikimedia.org https://*.icons8.com https://*.giphy.com https://picsum.photos https://images.unsplash.com; connect-src 'self' http://13.238.254.66:18000 http://127.0.0.1:9000 ws://13.238.254.66:18000 ws://127.0.0.1:9000 https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; media-src 'self' blob: http://13.238.254.66:18000 http://127.0.0.1:9000; img-src 'self' data: blob: http://13.238.254.66:18000 http://127.0.0.1:9000 https:; frame-src 'self' https://www.youtube.com https://trytako.com; child-src 'self'; manifest-src 'self'; worker-src 'self' blob:;">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>极简架构 - 视频平台布局骨架</title>
+  <!-- 播放所需：MD5（登录）、HLS、HTTP-FLV -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.19.0/js/md5.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flv.js@1.6.2/dist/flv.min.js"></script>
+  <!-- 官方播放器 SDK 依赖与本地镜像（用于复现官方 demo 的播放链路） -->
+  <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.2.0/crypto-js.min.js"></script>
+  <script src="vendor/EasyPlayer-pro.js"></script>
+  <!-- 开源 EasyPlayer.js（你已拉到本地目录） -->
+  <script src="EasyPlayer.js/js/EasyPlayer-pro.js"></script>
+  <style>
+    /* 极简：只做布局，不做任何“风格化” */
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body { font-family: sans-serif; }
+
+    .app { height: 100%; display: flex; flex-direction: column; }
+
+    /* 顶部导航（截图一致：左品牌 + 中间菜单 + 右侧搜索/用户） */
+    .topbar {
+      height: 56px;
+      display: flex;
+      align-items: stretch;
+      border-bottom: 1px solid #000;
+    }
+    .top-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 12px;
+      min-width: 240px;
+      border-right: 1px solid #000;
+      white-space: nowrap;
+    }
+    .top-left a {
+      color: inherit;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .top-left a:hover { text-decoration: underline; }
+    .top-center {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      flex: 1;
+    }
+    /* 顶部菜单后的“空白区”承载搜索框并居中 */
+    .top-center-search {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 12px;
+    }
+    .top-center-search input {
+      width: min(520px, 100%);
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      padding: 0 18px;
+      border-right: 1px solid #000;
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+    }
+    .nav-item[aria-current="page"] { font-weight: 700; }
+
+    .dropdown {
+      display: none;
+      position: absolute;
+      top: 56px;
+      left: 0;
+      border: 1px solid #000;
+      background: #fff;
+      min-width: 160px;
+      z-index: 10;
+    }
+    .dropdown a {
+      display: block;
+      padding: 10px 12px;
+      border-bottom: 1px solid #000;
+    }
+    .dropdown a:last-child { border-bottom: 0; }
+    .nav-item.open .dropdown { display: block; }
+
+    .top-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 12px;
+      min-width: 160px;
+      border-left: 1px solid #000;
+      white-space: nowrap;
+    }
+    .top-right input { width: 100%; }
+
+    /* 主体：左侧列表栏 + 右侧内容区（截图一致） */
+    .main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: 0;
+    }
+
+    /* 左侧面板：顶部 tab + 搜索 + 树列表 */
+    .sidebar {
+      border-right: 1px solid #000;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .sidebar-search {
+      display: grid;
+      grid-template-columns: 1fr 72px;
+      gap: 6px;
+      padding: 10px;
+      border-bottom: 1px solid #000;
+    }
+
+    /* 接入真实平台：登录/加载通道工具条（极简） */
+    .sidebar-auth {
+      border-bottom: 1px solid #000;
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+    .sidebar-auth .row {
+      display: grid;
+      grid-template-columns: 86px 1fr;
+      gap: 6px;
+      align-items: center;
+    }
+    .sidebar-auth input { width: 100%; }
+    .sidebar-auth .btnline { display: flex; gap: 6px; flex-wrap: wrap; }
+    .sidebar-auth .hint { color: #333; font-size: 12px; line-height: 1.35; }
+    .sidebar-auth .hint b { font-weight: 700; }
+    .sidebar-auth textarea {
+      width: 100%;
+      min-height: 96px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .sidebar-body {
+      overflow: auto;
+      padding: 10px;
+    }
+    .tree {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .tree ul { list-style: none; padding: 0; margin: 0; }
+    .tree .tree-group-list { padding-left: 18px; }
+
+    .tree-item { margin: 0; }
+    .tree-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 6px;
+      border-bottom: 1px solid #000;
+      user-select: none;
+      cursor: pointer;
+    }
+    .tree-row.selected {
+      background: #2f63ff;
+      color: #fff;
+    }
+
+    .tree-caret {
+      width: 16px;
+      height: 16px;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+    }
+    .tree-caret::before { content: '▶'; font-size: 11px; line-height: 1; }
+    .tree-group[aria-expanded="true"] > .tree-row .tree-caret::before { content: '▼'; }
+    .tree-caret.placeholder { cursor: default; }
+    .tree-caret.placeholder::before { content: ''; }
+
+    .tree-main {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .tree-icon { width: 16px; text-align: center; flex: 0 0 auto; }
+    .tree-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tree-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 0 0 auto;
+    }
+    .tree-count {
+      color: #0a8a20;
+      font-variant-numeric: tabular-nums;
+    }
+    .tree-row.selected .tree-count { color: rgba(255,255,255,0.95); }
+
+    .tree-fav {
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+      padding: 2px;
+      color: #666;
+    }
+    .tree-fav[aria-pressed="true"] { color: #f4c430; }
+    .tree-row.selected .tree-fav { color: rgba(255,255,255,0.9); }
+
+    .tree-group[aria-expanded="false"] > .tree-group-list { display: none; }
+
+    /* 右侧内容：只保留“主内容 + 底部”（不再保留顶部空白 block） */
+    .content {
+      display: grid;
+      grid-template-rows: 1fr;
+      min-height: 0;
+    }
+
+    /* 主区：视频展示区域（多画面网格） */
+    .content-main {
+      min-height: 0;
+      overflow: auto;
+      padding: 16px;
+      display: block;
+    }
+    .video-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+      gap: 16px;
+      align-items: start;
+    }
+    /* 单选摄像机：右侧显示“单画面模式”，不再用网格撑满宽度 */
+    .video-grid.is-single {
+      display: block;
+    }
+
+    /* 单画面：上方视频 + 下方“播放控制/流信息/分享/播放诊断”等占位 */
+    .viewer {
+      border: 1px solid #000;
+      display: grid;
+      grid-template-rows: auto auto;
+      min-height: 0;
+    }
+    .viewer-video {
+      border-bottom: 1px solid #000;
+      background: #f7f7f7;
+    }
+    /* 关键：高度固定 66vh；画面不横向拉伸，宽度由比例决定 */
+    .viewer-frame {
+      height: 66vh;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: #f7f7f7;
+    }
+    /* “现代 CCTV”画幅框：标准 16:9，黑底 + 细边框，居中显示 */
+    .cctv-box {
+      height: 100%;
+      max-width: 100%;
+      aspect-ratio: 16 / 9;
+      border: 1px solid #000;
+      background: #000;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .cctv-video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+      z-index: 1;
+    }
+    .cctv-osd { z-index: 3; }
+    .cctv-diag {
+      position: absolute;
+      left: 10px;
+      bottom: 10px;
+      z-index: 3;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: wrap;
+      max-width: calc(100% - 20px);
+      pointer-events: auto;
+    }
+    .cctv-diag .pill {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1.2;
+      color: rgba(255,255,255,0.95);
+      background: rgba(0,0,0,0.55);
+      border: 1px solid rgba(255,255,255,0.18);
+      padding: 6px 8px;
+      border-radius: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .cctv-diag button {
+      border: 1px solid rgba(255,255,255,0.55);
+      background: rgba(0,0,0,0.25);
+      color: rgba(255,255,255,0.95);
+      padding: 6px 10px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    .cctv-diag button:active { transform: translateY(1px); }
+    /* 纯前端“视频模拟”占位（不使用 <img>，避免破图） */
+    .video-placeholder {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      user-select: none;
+      letter-spacing: 1px;
+    }
+    .video-placeholder.dark {
+      color: rgba(255, 255, 255, 0.85);
+      background:
+        radial-gradient(circle at 20% 30%, rgba(255,255,255,0.10), transparent 40%),
+        radial-gradient(circle at 70% 60%, rgba(255,255,255,0.07), transparent 45%),
+        repeating-linear-gradient(0deg, rgba(255,255,255,0.06) 0 1px, rgba(0,0,0,0) 1px 3px),
+        linear-gradient(135deg, rgba(255,255,255,0.05), rgba(0,0,0,0));
+    }
+    .video-placeholder.light {
+      color: rgba(0, 0, 0, 0.75);
+      background:
+        repeating-linear-gradient(0deg, rgba(0,0,0,0.06) 0 1px, rgba(255,255,255,0) 1px 4px),
+        linear-gradient(135deg, rgba(0,0,0,0.04), rgba(0,0,0,0));
+    }
+    .cctv-osd {
+      position: absolute;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1.2;
+      color: rgba(255,255,255,0.95);
+      background: rgba(0,0,0,0.35);
+      border: 1px solid rgba(255,255,255,0.18);
+      padding: 6px 8px;
+      border-radius: 10px;
+      backdrop-filter: blur(6px);
+      max-width: calc(100% - 20px);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      pointer-events: none;
+    }
+    .cctv-osd.tl { top: 10px; left: 10px; }
+    .cctv-osd.br { bottom: 10px; right: 10px; }
+    .viewer-tabs {
+      display: flex;
+      gap: 18px;
+      padding: 10px 12px;
+      border-bottom: 1px solid #000;
+      white-space: nowrap;
+      overflow: auto;
+    }
+    .viewer-tab {
+      border: 0;
+      padding: 0;
+      background: transparent;
+      cursor: pointer;
+      font: inherit;
+      text-decoration: none;
+      color: inherit;
+    }
+    .viewer-tab.active {
+      font-weight: 700;
+      text-decoration: underline;
+    }
+    .viewer-panel {
+      padding: 12px;
+      display: grid;
+      gap: 12px;
+    }
+    .block {
+      border: 1px solid #000;
+      padding: 12px;
+      min-width: 0;
+    }
+    .block-title {
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 10px;
+      align-items: center;
+      min-width: 0;
+    }
+    .row .label {
+      white-space: nowrap;
+    }
+    .row .field {
+      min-width: 0;
+    }
+    .chipsline {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .chipbtn {
+      border: 1px solid #000;
+      background: transparent;
+      padding: 6px 10px;
+      cursor: pointer;
+      white-space: nowrap;
+      font: inherit;
+    }
+    .chipbtn.active {
+      background: #2f63ff;
+      color: #fff;
+    }
+    .field input[type="text"] {
+      width: 100%;
+    }
+    .preset-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .preset-list {
+      border-top: 1px solid #000;
+    }
+    .preset-item {
+      display: grid;
+      grid-template-columns: 1fr 140px 60px 60px;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid #000;
+      align-items: center;
+      min-width: 0;
+    }
+    .preset-item .muted { color: #333; }
+    .video-tile {
+      border: 1px solid #000;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      min-height: 0;
+    }
+    .video-thumb {
+      border-bottom: 1px solid #000;
+      background: #f7f7f7;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+    }
+    .video-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .video-meta {
+      padding: 8px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #0a8a20;
+      display: inline-block;
+    }
+    .video-empty {
+      border: 1px dashed #000;
+      padding: 18px;
+      color: #333;
+    }
+
+    /* 底部版权（截图底部） */
+    .footer {
+      border-top: 1px solid #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 12px;
+    }
+
+    /* 简单响应：小屏时堆叠 */
+    @media (max-width: 900px) {
+      .main { grid-template-columns: 1fr; }
+      .top-right { min-width: 220px; }
+      .content-main { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <!-- 顶部导航 -->
+    <header class="topbar" role="banner">
+      <div class="top-left">
+        <strong>Apex CCTV</strong>
+        <span>|</span>
+        <a href="homepage.html">首页</a>
+      </div>
+
+      <nav class="top-center" aria-label="主导航">
+        <div class="nav-item" aria-current="page" data-nav="video">
+          视频
+        </div>
+
+        <div class="nav-item" data-nav="device">
+          设备
+          <div class="dropdown" role="menu" aria-label="设备菜单">
+            <a href="device_management.html" role="menuitem">设备管理</a>
+            <a href="#" role="menuitem">分组管理</a>
+          </div>
+        </div>
+
+        <div class="nav-item" data-nav="user">
+          用户
+          <div class="dropdown" role="menu" aria-label="用户菜单">
+            <a href="user_management.html" role="menuitem">用户管理</a>
+            <a href="#" role="menuitem">角色管理</a>
+          </div>
+        </div>
+
+        <div class="nav-item" data-nav="gallery">
+          图库
+          <div class="dropdown" role="menu" aria-label="图库菜单">
+            <a href="#" role="menuitem">网关告警</a>
+            <a href="#" role="menuitem">协议告警</a>
+            <a href="#" role="menuitem">1400告警</a>
+          </div>
+        </div>
+
+        <div class="nav-item" data-nav="ai">
+          AI 分析
+        </div>
+
+        <div class="nav-item" data-nav="config">
+          配置
+          <div class="dropdown" role="menu" aria-label="配置菜单">
+            <a href="#" role="menuitem">基础配置</a>
+            <a href="#" role="menuitem">录像配置</a>
+            <a href="#" role="menuitem">告警配置</a>
+            <a href="#" role="menuitem">设备接入</a>
+            <a href="#" role="menuitem">运维管理</a>
+          </div>
+        </div>
+        <div class="top-center-search" aria-label="顶部搜索">
+          <input id="topSearchInput" placeholder="请输入搜索内容">
+        </div>
+      </nav>
+
+      <div class="top-right">
+        <span>管理员</span>
+      </div>
+    </header>
+
+    <!-- 主体 -->
+    <div class="main">
+      <!-- 左侧列表栏 -->
+      <aside class="sidebar" aria-label="左侧栏">
+        <div class="sidebar-search">
+          <input id="treeSearchInput" placeholder="搜索">
+          <button type="button" id="treeSearchBtn">搜索</button>
+        </div>
+
+        <div class="sidebar-auth" aria-label="真实视频源接入">
+          <div class="row">
+            <div class="label">Base URL</div>
+            <input id="apiBaseInput" value="http://13.238.254.66:18000" spellcheck="false">
+          </div>
+          <div class="row">
+            <div class="label">用户名</div>
+            <input id="apiUserInput" placeholder="例如：easycvr" autocomplete="username">
+          </div>
+          <div class="row">
+            <div class="label">密码</div>
+            <input id="apiPassInput" placeholder="登录密码（将按 md5 小写提交）" type="password" autocomplete="current-password">
+          </div>
+          <div class="row">
+            <div class="label">设备ID</div>
+            <input id="apiDeviceInput" placeholder="必填：例如 8/22/24/26/27（来自设备管理页“编号”）" spellcheck="false">
+          </div>
+          <div class="btnline">
+            <button type="button" id="btnLogin">登录获取Token</button>
+            <button type="button" id="btnLoadChannels">加载通道列表</button>
+            <button type="button" id="btnLogout">退出</button>
+            <button type="button" id="btnTestPlay">测试当前播放URL</button>
+            <button type="button" id="btnClearDiag">清空诊断</button>
+            <button type="button" id="btnCopyDiag">复制诊断</button>
+          </div>
+          <div class="hint" id="apiStatusHint">
+            状态：未登录。提示：如果网页请求报 CORS，请把本页面放到 `13.238.254.66:18000` 同域下访问，或让厂家开启跨域。
+          </div>
+          <textarea id="diagBox" readonly placeholder="播放诊断输出（会记录：页面来源、当前播放URL、m3u8/分片/FLV探测、video事件、hls.js/flv.js错误）"></textarea>
+        </div>
+
+        <div class="sidebar-body">
+          <ul class="tree" id="deviceTree" role="tree" aria-label="设备树"></ul>
+        </div>
+      </aside>
+
+      <!-- 右侧内容区 -->
+      <section class="content" aria-label="内容区">
+        <!-- 主内容：视频展示区域（由左侧选择驱动） -->
+        <div class="content-main">
+          <div id="videoGrid" class="video-grid" aria-label="视频展示区域"></div>
+        </div>
+
+      </section>
+    </div>
+  </div>
+
+  <script>
+    // 极简交互：顶部“下拉菜单”点击开合（用于还原截图结构）
+    const navItems = document.querySelectorAll('.nav-item');
+    function closeAll() { navItems.forEach(i => i.classList.remove('open')); }
+    navItems.forEach(item => {
+      item.addEventListener('click', (e) => {
+        const hasDropdown = item.querySelector('.dropdown');
+        if (!hasDropdown) { closeAll(); return; }
+        const isOpen = item.classList.contains('open');
+        closeAll();
+        if (!isOpen) item.classList.add('open');
+        e.stopPropagation();
+      });
+    });
+    document.addEventListener('click', closeAll);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAll(); });
+
+    // 左侧设备树：展开/折叠、选中、收藏、搜索过滤
+    const tree = document.getElementById('deviceTree');
+    const treeSearchInput = document.getElementById('treeSearchInput');
+    const treeSearchBtn = document.getElementById('treeSearchBtn');
+    const videoGrid = document.getElementById('videoGrid');
+    const MAX_VIDEO_TILES = 6; // 文件夹里摄像机很多时，右侧最多展示多少路（每次点击会随机抽取/打乱）
+
+    // ===== 真实平台接入（EasyCVR 风格）=====
+    const apiBaseInput = document.getElementById('apiBaseInput');
+    const apiUserInput = document.getElementById('apiUserInput');
+    const apiPassInput = document.getElementById('apiPassInput');
+    const apiDeviceInput = document.getElementById('apiDeviceInput');
+    const btnLogin = document.getElementById('btnLogin');
+    const btnLoadChannels = document.getElementById('btnLoadChannels');
+    const btnLogout = document.getElementById('btnLogout');
+    const btnTestPlay = document.getElementById('btnTestPlay');
+    const btnClearDiag = document.getElementById('btnClearDiag');
+    const btnCopyDiag = document.getElementById('btnCopyDiag');
+    const apiStatusHint = document.getElementById('apiStatusHint');
+    const diagBox = document.getElementById('diagBox');
+
+    const STORE_KEY = 'apexCctv.easycvr';
+    const state = {
+      baseUrl: 'http://13.238.254.66:18000',
+      upstreamUrl: 'http://13.238.254.66:18000', // 平台真实地址（用于 streamInfo 的 url 参数）
+      token: '',
+      username: '',
+      deviceId: '',
+      hls: null,
+      flv: null,
+      easyPlayer: null, // 官方 SDK 播放器实例（若启用）
+      lastAddrs: null,
+      lastCam: null,
+      proto: 'HLS', // 默认：浏览器最稳（只自动用 HLS/FLV）
+      _autoTried: {}, // { "device__channel": { HLS: true, FLV: true } }
+    };
+
+    function setStatus(msg) {
+      if (apiStatusHint) apiStatusHint.textContent = msg;
+    }
+
+    const diag = { lines: [] };
+    function nowTs() {
+      const d = new Date();
+      return d.toISOString().replace('T', ' ').slice(0, 19);
+    }
+    function logDiag(line) {
+      const s = `[${nowTs()}] ${String(line)}`;
+      diag.lines.push(s);
+      if (diag.lines.length > 400) diag.lines.splice(0, diag.lines.length - 400);
+      if (diagBox instanceof HTMLTextAreaElement) {
+        diagBox.value = diag.lines.join('\n');
+        diagBox.scrollTop = diagBox.scrollHeight;
+      }
+      try { console.log(s); } catch {}
+    }
+
+    window.addEventListener('error', (e) => {
+      logDiag(`window.error: ${e?.message || e}`);
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      logDiag(`unhandledrejection: ${e?.reason?.message || e?.reason || e}`);
+    });
+
+    function attachVideoDebug(videoEl) {
+      if (!(videoEl instanceof HTMLVideoElement)) return;
+      const evs = ['loadstart','loadedmetadata','loadeddata','canplay','canplaythrough','play','playing','pause','waiting','stalled','seeking','seeked','ended','error','timeupdate'];
+      evs.forEach((ev) => {
+        videoEl.addEventListener(ev, () => {
+          const err = videoEl.error ? ` err=${videoEl.error.code}` : '';
+          const t = Number.isFinite(videoEl.currentTime) ? videoEl.currentTime.toFixed(2) : 'NaN';
+          const d = Number.isFinite(videoEl.duration) ? videoEl.duration.toFixed(2) : 'NaN';
+          const wh = `${videoEl.videoWidth || 0}x${videoEl.videoHeight || 0}`;
+          let q = '';
+          try {
+            const pq = videoEl.getVideoPlaybackQuality?.();
+            if (pq) q = ` frames=${pq.totalVideoFrames || 0} dropped=${pq.droppedVideoFrames || 0}`;
+          } catch {}
+          logDiag(`video.${ev}: t=${t} dur=${d} wh=${wh} ready=${videoEl.readyState} net=${videoEl.networkState}${q}${err}`);
+        }, { passive: true });
+      });
+    }
+
+    async function fetchTextSafe(url, options) {
+      const res = await fetch(url, options);
+      const text = await res.text();
+      return { res, text };
+    }
+
+    function extractCodecsFromM3u8(text) {
+      const m = String(text || '').match(/CODECS=\"([^\"]+)\"/i);
+      return m ? m[1] : '';
+    }
+
+    function resolveRelativeUrl(baseUrl, maybeRelative) {
+      try {
+        return new URL(maybeRelative, baseUrl).toString();
+      } catch {
+        return '';
+      }
+    }
+
+    async function testCurrentPlayUrl() {
+      const input = document.getElementById('playUrlInput');
+      const url = (input instanceof HTMLInputElement) ? input.value.trim() : '';
+      if (!url) {
+        logDiag('测试失败：未找到当前播放URL（请先点击一个通道）。');
+        return;
+      }
+      logDiag(`==== 测试开始 ====`);
+      logDiag(`page.origin=${location.origin} page.href=${location.href}`);
+      logDiag(`baseUrl=${state.baseUrl}`);
+      logDiag(`proto=${state.proto} url=${url}`);
+
+      const isM3u8 = /\.m3u8(\?|$)/i.test(url);
+      const isFlv = /\.flv(\?|$)/i.test(url);
+
+      try {
+        if (isM3u8) {
+          logDiag('探测：GET playlist.m3u8');
+          const { res, text } = await fetchTextSafe(url, { method: 'GET' });
+          logDiag(`playlist: status=${res.status} ct=${res.headers.get('content-type') || ''}`);
+          logDiag(`playlist.head:\n${text.slice(0, 400)}`);
+          const codecs = extractCodecsFromM3u8(text);
+          if (codecs) logDiag(`playlist.CODECS=${codecs}`);
+
+          // 如果是 master playlist（含 EXT-X-STREAM-INF），再抓第一条 variant playlist，看编码信息
+          if (/#EXT-X-STREAM-INF/i.test(text)) {
+            const lines0 = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+            const idx = lines0.findIndex(l => /^#EXT-X-STREAM-INF/i.test(l));
+            const variantRel = (idx >= 0 && lines0[idx + 1] && !lines0[idx + 1].startsWith('#')) ? lines0[idx + 1] : '';
+            if (variantRel) {
+              const variantUrl = resolveRelativeUrl(url, variantRel);
+              logDiag(`探测：GET variant playlist ${variantUrl}`);
+              const { res: r2, text: t2 } = await fetchTextSafe(variantUrl, { method: 'GET' });
+              logDiag(`variant: status=${r2.status} ct=${r2.headers.get('content-type') || ''}`);
+              logDiag(`variant.head:\n${t2.slice(0, 300)}`);
+              const c2 = extractCodecsFromM3u8(t2);
+              if (c2) logDiag(`variant.CODECS=${c2}`);
+            }
+          }
+          const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+          const seg = lines.find(l => !l.startsWith('#'));
+          if (!seg) {
+            logDiag('playlist 里未找到分片行（可能返回了错误页/空内容）');
+            return;
+          }
+          const segUrl = resolveRelativeUrl(url, seg);
+          logDiag(`探测：GET 首个分片 ${segUrl}`);
+          const segRes = await fetch(segUrl, { method: 'GET' });
+          logDiag(`segment: status=${segRes.status} ct=${segRes.headers.get('content-type') || ''}`);
+          return;
+        }
+
+        if (isFlv) {
+          logDiag('探测：GET FLV Range bytes=0-2047');
+          const res = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-2047' } });
+          logDiag(`flv: status=${res.status} ct=${res.headers.get('content-type') || ''} cr=${res.headers.get('content-range') || ''}`);
+          return;
+        }
+
+        logDiag('探测：URL 非 m3u8/flv，尝试 GET');
+        const res = await fetch(url, { method: 'GET' });
+        logDiag(`generic: status=${res.status} ct=${res.headers.get('content-type') || ''}`);
+      } catch (e) {
+        logDiag(`探测失败：${e?.message || e}`);
+        logDiag('如果是 “Failed to fetch”，最常见原因是：跨域(CORS) 或 mixed-content。建议把本页面放到 http://13.238.254.66:18000 同域下访问，或用反向代理。');
+      } finally {
+        logDiag(`==== 测试结束 ====`);
+      }
+    }
+
+    function saveState() {
+      try {
+        const payload = {
+          baseUrl: state.baseUrl,
+          upstreamUrl: state.upstreamUrl,
+          token: state.token,
+          username: state.username,
+          deviceId: state.deviceId,
+          proto: state.proto,
+        };
+        localStorage.setItem(STORE_KEY, JSON.stringify(payload));
+      } catch {}
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORE_KEY);
+        if (!raw) return;
+        const v = JSON.parse(raw);
+        if (typeof v?.baseUrl === 'string') state.baseUrl = v.baseUrl;
+        if (typeof v?.upstreamUrl === 'string') state.upstreamUrl = v.upstreamUrl;
+        if (typeof v?.token === 'string') state.token = v.token;
+        if (typeof v?.username === 'string') state.username = v.username;
+        if (typeof v?.deviceId === 'string') state.deviceId = v.deviceId;
+        if (typeof v?.proto === 'string') state.proto = v.proto;
+      } catch {}
+    }
+
+    function normalizeBaseUrl(u) {
+      const x = (u || '').trim().replace(/\/+$/, '');
+      return x || 'http://13.238.254.66:18000';
+    }
+
+    function normalizeUpstreamUrl(u) {
+      const x = (u || '').trim().replace(/\/+$/, '');
+      return x || 'http://13.238.254.66:18000';
+    }
+
+    function joinUrl(base, path) {
+      const p = (path || '').trim();
+      if (!p) return '';
+      if (/^https?:\/\//i.test(p) || /^wss?:\/\//i.test(p)) return p;
+      const b = normalizeBaseUrl(base);
+      return p.startsWith('/') ? (b + p) : (b + '/' + p);
+    }
+
+    function joinUpstream(path) {
+      const p = (path || '').trim();
+      if (!p) return '';
+      if (/^https?:\/\//i.test(p) || /^wss?:\/\//i.test(p)) return p;
+      const b = normalizeUpstreamUrl(state.upstreamUrl);
+      return p.startsWith('/') ? (b + p) : (b + '/' + p);
+    }
+
+    function getOfficialSdk() {
+      // UMD 全局名是 "EasyPlayer-pro"（带短横线），只能用 bracket 访问
+      // 注意：你本地的 EasyPlayer.js 也会导出 window.EasyPlayerPro，我们优先拿它（它支持 H265/WASM/WebCodec）。
+      const sdk = window.EasyPlayerPro || window["EasyPlayer-pro"] || window.EasyPlayer || null;
+      return sdk;
+    }
+
+    async function playWithEasyPlayerJs(playUrl) {
+      const SDK = window.EasyPlayerPro;
+      logDiag(`EasyPlayer.js: detect typeof=${typeof SDK}`);
+      if (typeof SDK !== 'function') throw new Error('未检测到 EasyPlayer.js（EasyPlayerPro 未加载）');
+
+      const mount = document.getElementById('sdkMount');
+      if (!(mount instanceof HTMLElement)) throw new Error('未找到 SDK 挂载容器');
+      mount.innerHTML = '';
+
+      // 隐藏我们自己的 <video>
+      const v = document.getElementById('liveVideoEl');
+      if (v instanceof HTMLVideoElement) v.style.display = 'none';
+
+      // 按 README：new EasyPlayerPro(container, config)；然后 player.play(url)
+      const config = {
+        isLive: true,
+        hasAudio: true,
+        isMute: true,
+        stretch: true,
+        debug: true,
+        // 解码模式：优先尝试 WebCodec/GPU，其次 WASM（高分辨率建议 SIMD）
+        gpuDecoder: true,
+        WASM: true,
+        WASMSIMD: true,
+        // 你这路是 flv/h265，建议强制 flv 解码路径
+        isFlv: true,
+        // wasm 文件与 js 同目录；部分版本会按相对路径加载
+        decoderWASM: "EasyPlayer.js/js/EasyPlayer-pro.wasm",
+      };
+
+      const inst = new SDK(mount, config);
+      state.easyPlayer = inst;
+      logDiag(`EasyPlayer.js: instance keys=${Object.keys(inst || {}).slice(0, 30).join(',')}`);
+      if (typeof inst.play !== 'function') throw new Error('EasyPlayerPro 实例缺少 play(url) 方法');
+      await inst.play(playUrl);
+      setStatus('状态：已切换为 EasyPlayer.js 播放');
+      return inst;
+    }
+
+    async function playWithOfficialSdk(playUrl) {
+      const sdk = getOfficialSdk();
+      logDiag(`SDK: detect typeof=${typeof sdk}`);
+      if (!sdk) throw new Error('未检测到官方 SDK（EasyPlayer-pro.js 未加载成功）');
+
+      const mount = document.getElementById('sdkMount');
+      if (!(mount instanceof HTMLElement)) throw new Error('未找到 SDK 挂载容器');
+      // 关键：官方 SDK 不允许复用同一个 container（会打 data-EasyProv 标记，复用就抛 "err container"）
+      // 所以我们每次播放都创建一个全新的 inner container，并传给 SDK
+      mount.innerHTML = '';
+      const inner = document.createElement('div');
+      inner.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+      mount.appendChild(inner);
+
+      // 隐藏我们自己的 <video>，避免两套播放器叠加
+      const v = document.getElementById('liveVideoEl');
+      if (v instanceof HTMLVideoElement) v.style.display = 'none';
+
+      // SDK 默认会去拉 /EasyPlayerPro/ 下的 decoder/wasm 等资源：
+      // - 你在用本地代理时（127.0.0.1:9000），我们已让 proxy_server.py 代理 /EasyPlayerPro/ 到上游
+      // - 所以 decoderPath 用相对路径即可（走当前站点同源）
+      const baseOpt = {
+        isLive: true,
+        lang: "zh",
+        debug: true,
+        decoderPath: "/EasyPlayerPro/",
+        mainThreadFetchUseWorker: true,
+      };
+
+      // 多种可能的导出形态，逐一尝试
+      let inst = null;
+      const opts = [{ ...baseOpt, container: inner }];
+
+      const factories = [];
+      if (typeof sdk === 'function') factories.push((o) => new sdk(o));
+      if (sdk && typeof sdk.default === 'function') factories.push((o) => new sdk.default(o));
+      if (sdk && typeof sdk.create === 'function') factories.push((o) => sdk.create(o));
+      if (sdk && typeof sdk.createPlayer === 'function') factories.push((o) => sdk.createPlayer(o));
+
+      let lastErr = null;
+      outer: for (const make of factories) {
+        for (const o of opts) {
+          try {
+            inst = make(o);
+            lastErr = null;
+            break outer;
+          } catch (e) {
+            lastErr = e;
+          }
+        }
+      }
+      if (!inst) throw new Error(`SDK 初始化失败：${lastErr?.message || lastErr || 'unknown'}`);
+
+      state.easyPlayer = inst;
+      logDiag(`SDK: instance keys=${Object.keys(inst || {}).slice(0, 30).join(',')}`);
+      logDiag(`SDK: methods play=${typeof inst.play} load=${typeof inst.load} start=${typeof inst.start} setUrl=${typeof inst.setUrl} setSource=${typeof inst.setSource}`);
+
+      // 关键：该 SDK 构造时会把 _opt.url 强制清空，所以必须传参调用 play(url)
+      if (typeof inst.play !== 'function') throw new Error('SDK 实例缺少 play() 方法');
+      await inst.play(playUrl, { isLive: true });
+
+      setStatus('状态：已切换为官方 SDK 播放（若仍无画面，请看诊断输出）');
+      return inst;
+    }
+
+    function toUpstreamUrl(playUrl) {
+      // 如果当前播放 URL 走的是本地代理(127.0.0.1)，则替换为真实平台地址，便于 /api/v1/streamInfo 识别
+      try {
+        const u = new URL(playUrl);
+        if (u.hostname === '127.0.0.1' || u.hostname === 'localhost') {
+          const b = new URL(normalizeUpstreamUrl(state.upstreamUrl));
+          u.protocol = b.protocol;
+          u.hostname = b.hostname;
+          u.port = b.port;
+          return u.toString();
+        }
+      } catch {}
+      return playUrl;
+    }
+
+    async function apiGet(path, params, token) {
+      const base = normalizeBaseUrl(state.baseUrl);
+      const url = new URL(joinUrl(base, path));
+      const qs = new URLSearchParams();
+      Object.entries(params || {}).forEach(([k, v]) => {
+        if (v === undefined || v === null) return;
+        const s = String(v).trim();
+        if (!s) return;
+        qs.set(k, s);
+      });
+      url.search = qs.toString();
+
+      const headers = {};
+      if (token) headers['Token'] = token;
+      const res = await fetch(url.toString(), { method: 'GET', headers });
+      const text = await res.text();
+      let json = null;
+      try { json = JSON.parse(text); } catch { /* 非 JSON 也返回 */ }
+      if (!res.ok) {
+        const msg = typeof json === 'object' ? JSON.stringify(json) : text;
+        throw new Error(`HTTP ${res.status}: ${msg}`.slice(0, 500));
+      }
+      return json ?? text;
+    }
+
+    function unwrapEasyDarwin(json) {
+      if (!json || typeof json !== 'object') return { ok: false, msg: '响应不是 JSON 对象', body: null, raw: json };
+      // 常见：{ EasyDarwin: { Header:{ErrorNum,ErrorString}, Body:{...} } }
+      const ed = json.EasyDarwin || json.easydarwin || json;
+      const header = ed?.Header || ed?.header || null;
+      const body = ed?.Body || ed?.body || ed;
+      const code = header?.ErrorNum ?? header?.errorNum ?? header?.Code ?? header?.code ?? 200;
+      const msg = header?.ErrorString ?? header?.errorString ?? header?.Message ?? header?.message ?? '';
+      const ok = Number(code) === 200 || Number(code) === 0;
+      return { ok, code, msg, body, raw: json };
+    }
+
+    async function doLogin() {
+      const base = normalizeBaseUrl(apiBaseInput?.value || state.baseUrl);
+      const username = (apiUserInput?.value || '').trim();
+      const passPlain = apiPassInput?.value || '';
+      if (!username || !passPlain) throw new Error('请输入用户名和密码');
+      if (typeof window.md5 !== 'function') throw new Error('md5 库未加载（请检查网络/CDN/CSP）');
+      const passMd5 = String(window.md5(passPlain)).toLowerCase();
+
+      state.baseUrl = base;
+      state.username = username;
+      saveState();
+
+      setStatus('状态：登录中...');
+      const json = await apiGet('/api/v1/login', { username, password: passMd5 }, '');
+      const r = unwrapEasyDarwin(json);
+      if (!r.ok) throw new Error(`登录失败：${r.msg || '未知错误'}`);
+      const token = r.body?.Token || r.body?.token || '';
+      if (!token) throw new Error('登录成功但未返回 Token（请检查返回字段）');
+      state.token = token;
+      saveState();
+      setStatus(`状态：已登录（${username}），Token 已保存（默认 7 天有效期）`);
+    }
+
+    function pickChannelLabel(ch) {
+      return (
+        ch?.Name ||
+        ch?.ChannelName ||
+        ch?.CustomName ||
+        ch?.DeviceName ||
+        ch?.ChannelID ||
+        ch?.ChannelId ||
+        '通道'
+      );
+    }
+
+    function renderChannelTree(channels) {
+      if (!tree) return;
+      const groups = new Map(); // deviceId => channels[]
+      (channels || []).forEach(ch => {
+        const dev = String(ch?.ParentDeviceID ?? ch?.parentDeviceID ?? ch?.DeviceID ?? ch?.deviceID ?? '').trim();
+        const cid = String(ch?.ChannelID ?? ch?.channelID ?? ch?.ChannelId ?? ch?.channelId ?? '').trim();
+        if (!dev || !cid) return;
+        if (!groups.has(dev)) groups.set(dev, []);
+        groups.get(dev).push({ raw: ch, deviceId: dev, channelId: cid, name: pickChannelLabel(ch) });
+      });
+
+      if (groups.size === 0) {
+        tree.innerHTML = `<li class="tree-item tree-leaf" role="treeitem"><div class="tree-row" data-tree-row><span class="tree-caret placeholder" aria-hidden="true"></span><span class="tree-main"><span class="tree-icon" aria-hidden="true">📁</span><span class="tree-label">未获取到通道（请检查 device 参数/Token/CORS）</span></span></div></li>`;
+        return;
+      }
+
+      const sortedDevices = Array.from(groups.keys()).sort();
+      tree.innerHTML = sortedDevices.map((devId) => {
+        const arr = groups.get(devId) || [];
+        const count = arr.length;
+        const leafHtml = arr.map((c) => {
+          const safeName = String(c.name).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          return `
+            <li class="tree-item tree-leaf" role="treeitem" data-device-id="${c.deviceId}" data-channel-id="${c.channelId}">
+              <div class="tree-row" data-tree-row>
+                <span class="tree-caret placeholder" aria-hidden="true"></span>
+                <span class="tree-main">
+                  <span class="tree-icon" aria-hidden="true">📷</span>
+                  <span class="tree-label">${safeName}</span>
+                </span>
+                <span class="tree-right">
+                  <button class="tree-fav" type="button" aria-label="收藏" aria-pressed="false" title="收藏" data-tree-fav>☆</button>
+                </span>
+              </div>
+            </li>
+          `;
+        }).join('');
+
+        return `
+          <li class="tree-item tree-group" role="treeitem" aria-expanded="true" data-device-id="${devId}">
+            <div class="tree-row" data-tree-row>
+              <button class="tree-caret" type="button" aria-label="展开/折叠" data-tree-toggle></button>
+              <span class="tree-main">
+                <span class="tree-icon" aria-hidden="true">📁</span>
+                <span class="tree-label">${devId}</span>
+              </span>
+              <span class="tree-right">
+                <span class="tree-count">(${count})</span>
+              </span>
+            </div>
+            <ul class="tree-group-list" role="group">${leafHtml}</ul>
+          </li>
+        `;
+      }).join('');
+    }
+
+    async function loadChannels() {
+      if (!state.token) {
+        setStatus('状态：未登录，无法加载通道。请先“登录获取Token”。');
+        return;
+      }
+      state.baseUrl = normalizeBaseUrl(apiBaseInput?.value || state.baseUrl);
+      state.deviceId = (apiDeviceInput?.value || state.deviceId || '').trim();
+      saveState();
+
+      setStatus('状态：加载通道列表中...');
+      if (!state.deviceId) {
+        // 按你最新汇总：channelsconfig 的 device 为必填
+        setStatus('状态：请先填写设备ID（例如你设备管理页看到的 8/22/24/26/27），再点“加载通道列表”。');
+        return;
+      }
+      const params = { start: 0, limit: 500, device: state.deviceId };
+      const json = await apiGet('/api/v1/channelsconfig', params, state.token);
+      const r = unwrapEasyDarwin(json);
+      if (!r.ok) throw new Error(`获取通道失败：${r.msg || '未知错误'}`);
+      const chans = r.body?.Channels || r.body?.channels || r.body?.Data || r.body?.data || [];
+      renderChannelTree(Array.isArray(chans) ? chans : []);
+      setStatus(`状态：通道加载完成。共 ${Array.isArray(chans) ? chans.length : 0} 条（已按 ParentDeviceID 分组显示）。`);
+    }
+
+    async function getStreamAddrs(deviceId, channelId) {
+      if (!state.token) throw new Error('未登录（缺 Token）');
+      const json = await apiGet('/api/v1/devices/channelstreamalladdr', { device: deviceId, channel: channelId }, state.token);
+      const r = unwrapEasyDarwin(json);
+      if (!r.ok) throw new Error(`获取流地址失败：${r.msg || '未知错误'}`);
+      const body = r.body || {};
+      return body;
+    }
+
+    function destroyPlayers() {
+      try { state.hls?.destroy?.(); } catch {}
+      try { state.flv?.destroy?.(); } catch {}
+      try {
+        // 官方 SDK 实例常见销毁方法
+        state.easyPlayer?.destroy?.();
+        state.easyPlayer?.close?.();
+        state.easyPlayer?.stop?.();
+      } catch {}
+      state.hls = null;
+      state.flv = null;
+      state.easyPlayer = null;
+    }
+
+    function camKey(deviceId, channelId) {
+      return `${String(deviceId || '')}__${String(channelId || '')}`;
+    }
+
+    function resetTried(deviceId, channelId) {
+      state._autoTried[camKey(deviceId, channelId)] = {};
+    }
+
+    function markTried(deviceId, channelId, proto) {
+      const key = camKey(deviceId, channelId);
+      if (!state._autoTried[key]) state._autoTried[key] = {};
+      state._autoTried[key][proto] = true;
+    }
+
+    function hasTried(deviceId, channelId, proto) {
+      const key = camKey(deviceId, channelId);
+      return !!state._autoTried[key]?.[proto];
+    }
+
+    function scheduleVideoHealthCheck(deviceId, channelId, currentProto) {
+      // 3.5 秒后检查是否解码出视频帧；若 wh 仍为 0，则自动切换 HLS/FLV 另一种协议重试一次
+      window.setTimeout(async () => {
+        const v = document.getElementById('liveVideoEl');
+        if (!(v instanceof HTMLVideoElement)) return;
+        const w = v.videoWidth || 0;
+        const h = v.videoHeight || 0;
+        logDiag(`healthcheck: proto=${currentProto} wh=${w}x${h}`);
+        if (w > 0 && h > 0) return;
+
+        logDiag('提示：wh=0x0 表示浏览器未解码出视频帧。高概率原因：');
+        logDiag('- 摄像机/平台输出为 H.265(HEVC) 或其他浏览器不支持编码（最常见）');
+        logDiag('- 或该流只有音频/黑帧（无视频轨）');
+        logDiag('处理建议：在平台把该通道主/子码流改为 H.264 + AAC，再试。');
+
+        // 额外：调用 /api/v1/streamInfo 直接确认编码/分辨率
+        try {
+          const rel = state.lastAddrs?.HLS || state.lastAddrs?.hls || state.lastAddrs?.FLV || state.lastAddrs?.flv || '';
+          const full = joinUpstream(rel);
+          if (full) {
+            const info = await apiGet('/api/v1/streamInfo', { url: full, channel: channelId }, state.token);
+            // 该接口看起来是“直接 JSON”而非 EasyDarwin 包裹
+            logDiag(`streamInfo: ${JSON.stringify(info)}`);
+            const vc = String(info?.video_codec || '').toUpperCase();
+            if (vc.includes('265') || vc.includes('HEVC') || vc.includes('H265')) {
+              logDiag('结论：video_codec=H265/HEVC，浏览器大概率无法解码，所以 wh=0x0。需要在平台/摄像机侧转为 H264。');
+            }
+          }
+        } catch (e) {
+          logDiag(`streamInfo: 调用失败 - ${e?.message || e}`);
+        }
+
+        const other = (currentProto === 'HLS') ? 'FLV' : 'HLS';
+        if (hasTried(deviceId, channelId, other)) return;
+        const nextUrl = getProtoUrl(state.lastAddrs, other);
+        if (!nextUrl) return;
+
+        try {
+          logDiag(`healthcheck: 自动切换到 ${other} 重试...`);
+          destroyPlayers();
+          markTried(deviceId, channelId, other);
+          setProto(other);
+          const playUrlInput = document.getElementById('playUrlInput');
+          if (playUrlInput instanceof HTMLInputElement) playUrlInput.value = nextUrl;
+          await mountPlayer(nextUrl, other);
+          setStatus(`状态：自动重试播放（${other}）`);
+        } catch (e) {
+          logDiag(`healthcheck: 自动切换失败 - ${e?.message || e}`);
+        }
+      }, 3500);
+    }
+
+    function setProto(next) {
+      // 仅支持自动播放：HLS / FLV
+      const n = String(next || '').toUpperCase();
+      state.proto = (n === 'HLS' || n === 'FLV') ? n : 'HLS';
+      saveState();
+    }
+
+    function getProtoUrl(addrs, proto) {
+      if (!addrs || typeof addrs !== 'object') return '';
+      const raw = addrs?.[proto] ?? addrs?.[String(proto).toUpperCase()] ?? addrs?.[String(proto).toLowerCase()];
+      return joinUrl(state.baseUrl, raw || '');
+    }
+
+    async function playCam(deviceId, channelId, name) {
+      destroyPlayers();
+      state.lastCam = { deviceId, channelId, name };
+      resetTried(deviceId, channelId);
+      setStatus(`状态：获取流地址中... device=${deviceId} channel=${channelId}`);
+      const addrs = await getStreamAddrs(deviceId, channelId);
+      state.lastAddrs = addrs;
+
+      // 只自动选择浏览器可控方案：HLS / HTTP-FLV
+      const preferred = (String(state.proto || 'HLS').toUpperCase() === 'FLV') ? 'FLV' : 'HLS';
+      let url = getProtoUrl(addrs, preferred);
+      let proto = preferred;
+      if (!url) {
+        url = getProtoUrl(addrs, 'HLS') || getProtoUrl(addrs, 'FLV') || '';
+        proto = url.includes('.m3u8') ? 'HLS' : 'FLV';
+      }
+      if (!url) throw new Error('接口返回里未找到可用播放地址（Body.HLS / Body.FLV 等为空）');
+
+      renderSingleViewer({ id: channelId, name: name || channelId, deviceId, channelId }, url, proto);
+      markTried(deviceId, channelId, proto);
+
+      // 播放前先查 streamInfo：
+      // - H264：继续走 hls.js/flv.js
+      // - H265：不要阻止用户使用“官方SDK播”（官方 demo 就是这样播的）
+      try {
+        const upstreamPlayUrl = toUpstreamUrl(url);
+        const info = await apiGet('/api/v1/streamInfo', { url: upstreamPlayUrl, channel: channelId }, state.token);
+        logDiag(`streamInfo(pre): ${JSON.stringify(info)}`);
+        const vc = String(info?.video_codec || '').toUpperCase();
+        const size = `${info?.video_width || 0}x${info?.video_height || 0}`;
+        if (vc) logDiag(`streamInfo(pre).video_codec=${vc} size=${size} fps=${info?.fps ?? ''} audio=${info?.audio_codec || ''}`);
+        if (vc.includes('265') || vc.includes('HEVC') || vc.includes('H265')) {
+          const overlay = document.getElementById('codecOverlay');
+          if (overlay) {
+            overlay.style.display = 'flex';
+            const hasSdk = !!getOfficialSdk();
+            overlay.textContent =
+              hasSdk
+                ? `该通道为 H265/HEVC（${size}）。本页面的通用播放器（HLS/FLV）在 Chrome/Edge 通常无法解码，所以会黑屏。\n\n你可以直接点击右下角「用官方SDK播」继续（复现官方 demo），或在平台/摄像机把码流改为 H264 后再用通用播放器播放。`
+                : `该通道为 H265/HEVC（${size}）。本页面的通用播放器（HLS/FLV）在 Chrome/Edge 通常无法解码，所以会黑屏。\n\n当前未检测到官方SDK，请把码流改为 H264（建议 1080p 或更低），再刷新重试。`;
+          }
+          setStatus('状态：检测到 H265/HEVC。请点「用官方SDK播」，或改为 H264。');
+          // 不再 return；让用户可手动点“用官方SDK播”
+          // 但这里不继续走通用播放器，避免无意义的黑屏等待
+          return;
+        }
+      } catch (e) {
+        logDiag(`streamInfo(pre): 失败 - ${e?.message || e}`);
+      }
+
+      await mountPlayer(url, proto);
+      setStatus(`状态：播放中（${proto}）`);
+      scheduleVideoHealthCheck(deviceId, channelId, proto);
+    }
+
+    function renderSingleViewer(cam, url, proto) {
+      if (!videoGrid) return;
+      videoGrid.classList.add('is-single');
+      videoGrid.innerHTML = `
+        <div class="viewer" data-cam-id="${cam.channelId}">
+          <div class="viewer-video" aria-label="视频画面区域">
+            <div class="viewer-frame">
+              <div class="cctv-box" aria-label="CCTV 画幅（16:9）">
+                <video id="liveVideoEl" class="cctv-video" playsinline muted autoplay controls></video>
+                <div id="sdkMount" style="position:absolute;inset:0;z-index:1;"></div>
+                <div id="codecOverlay" class="video-placeholder dark" style="position:absolute; inset:0; z-index:2; display:none; padding:18px;">
+                  <!-- 自动写入提示 -->
+                </div>
+                <div class="cctv-osd tl">${new Date().toISOString().replace('T',' ').slice(0,19)}</div>
+                <div class="cctv-osd br">${cam.name}</div>
+                <div class="cctv-diag" aria-label="画面诊断">
+                  <span class="pill" id="pillWh">wh: -</span>
+                  <span class="pill" id="pillProto">proto: ${proto}</span>
+                  <button type="button" id="btnSnapFrame">抓一帧</button>
+                  <button type="button" id="btnQueryStreamInfo">流信息</button>
+                  <button type="button" id="btnUseOfficialSdk">用SDK播</button>
+                  <button type="button" id="btnUseEasyPlayerJs">用EasyPlayer.js播</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="viewer-tabs" role="tablist" aria-label="功能区">
+              <button class="viewer-tab active" type="button" role="tab" aria-selected="true">播放控制</button>
+              <button class="viewer-tab" type="button" role="tab" aria-selected="false">流信息</button>
+              <button class="viewer-tab" type="button" role="tab" aria-selected="false">分享</button>
+              <button class="viewer-tab" type="button" role="tab" aria-selected="false">播放诊断</button>
+            </div>
+
+            <div class="viewer-panel">
+              <div class="block">
+                <div class="block-title">码流切换</div>
+                <div class="chipsline" aria-label="码流协议切换">
+                  <button class="chipbtn ${proto === 'FLV' ? 'active' : ''}" type="button" data-proto="FLV">HTTP-FLV</button>
+                  <button class="chipbtn ${proto === 'HLS' ? 'active' : ''}" type="button" data-proto="HLS">HLS</button>
+                  <button class="chipbtn" type="button" data-proto="WEBRTC" disabled title="WebRTC 通常需要厂家专用对接/SDK">WebRTC</button>
+                  <button class="chipbtn" type="button" data-proto="WS_FLV" disabled title="WS-FLV 需要专用播放器/SDK">WS-FLV</button>
+                  <button class="chipbtn" type="button" data-proto="FMP4" disabled title="FMP4/WS-FMP4 未在本页面实现">HTTP-FMP4</button>
+                  <button class="chipbtn" type="button" data-proto="WS_FMP4" disabled title="FMP4/WS-FMP4 未在本页面实现">WS-FMP4</button>
+                </div>
+              </div>
+
+              <div class="block">
+                <div class="block-title">码流地址</div>
+                <div class="row">
+                  <div class="label">播放地址</div>
+                  <div class="field">
+                    <input id="playUrlInput" type="text" value="${String(url).replace(/"/g,'&quot;')}">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // video 事件诊断
+      const liveV = document.getElementById('liveVideoEl');
+      attachVideoDebug(liveV);
+      const pillWh = document.getElementById('pillWh');
+      const tick = () => {
+        if (!(liveV instanceof HTMLVideoElement)) return;
+        if (pillWh) pillWh.textContent = `wh: ${liveV.videoWidth || 0}x${liveV.videoHeight || 0}`;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+
+      const btnSnapFrame = document.getElementById('btnSnapFrame');
+      btnSnapFrame?.addEventListener('click', () => {
+        try {
+          if (!(liveV instanceof HTMLVideoElement)) return;
+          const w = liveV.videoWidth || 0;
+          const h = liveV.videoHeight || 0;
+          logDiag(`snap: video wh=${w}x${h}`);
+          if (!w || !h) { logDiag('snap: videoWidth/videoHeight 为 0（流可能无视频轨或无法解码）'); return; }
+          const c = document.createElement('canvas');
+          c.width = w;
+          c.height = h;
+          const ctx = c.getContext('2d');
+          if (!ctx) { logDiag('snap: canvas ctx 为空'); return; }
+          ctx.drawImage(liveV, 0, 0, w, h);
+          const dataUrl = c.toDataURL('image/png');
+          // 打开新窗口显示抓帧（最直观）
+          const win = window.open('', '_blank');
+          if (win) win.document.write(`<title>抓帧</title><img src="${dataUrl}" style="max-width:100%;height:auto;">`);
+          logDiag('snap: 已打开新窗口显示抓帧');
+        } catch (e) {
+          logDiag(`snap: 失败 - ${e?.message || e}`);
+          logDiag('snap 失败如果是 SecurityError，说明仍有跨域污染（请确认通过本地代理同源加载）。');
+        }
+      });
+
+      // 绑定协议切换
+      const chips = videoGrid.querySelectorAll('[data-proto]');
+      chips.forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const p = btn.getAttribute('data-proto') || 'HLS';
+          setProto(p);
+          // 非 HLS/FLV 的按钮目前禁用；这里仍做保护
+          const nextUrl = getProtoUrl(state.lastAddrs, state.proto);
+          const playUrlInput = document.getElementById('playUrlInput');
+          if (playUrlInput instanceof HTMLInputElement) playUrlInput.value = nextUrl || '';
+          if (!nextUrl) {
+            setStatus(`状态：该通道未返回 ${state.proto} 地址（接口字段为空）`);
+            return;
+          }
+          try {
+            destroyPlayers();
+            await mountPlayer(nextUrl, state.proto);
+            setStatus(`状态：切换播放成功（${state.proto}）`);
+          } catch (e) {
+            setStatus(`状态：切换播放失败（${state.proto}）- ${(e && e.message) ? e.message : String(e)}`);
+          }
+        });
+      });
+
+      const btnQueryStreamInfo = document.getElementById('btnQueryStreamInfo');
+      btnQueryStreamInfo?.addEventListener('click', async () => {
+        try {
+          const input = document.getElementById('playUrlInput');
+          const playUrl = (input instanceof HTMLInputElement) ? input.value.trim() : '';
+          if (!playUrl) { logDiag('streamInfo: 当前无播放URL'); return; }
+          // streamInfo 的 url 参数建议传“平台可访问的真实地址”
+          let upstreamPlayUrl = playUrl;
+          try {
+            const u = new URL(playUrl);
+            const base = normalizeUpstreamUrl(state.upstreamUrl);
+            const b = new URL(base);
+            // 如果当前播放走的是本地代理，则替换为真实上游 host/port
+            if (u.hostname === '127.0.0.1' || u.hostname === 'localhost') {
+              u.protocol = b.protocol;
+              u.hostname = b.hostname;
+              u.port = b.port;
+              upstreamPlayUrl = u.toString();
+            }
+          } catch {}
+          logDiag(`streamInfo: query url=${upstreamPlayUrl} channel=${cam.channelId}`);
+          const info = await apiGet('/api/v1/streamInfo', { url: upstreamPlayUrl, channel: cam.channelId }, state.token);
+          logDiag(`streamInfo: ${JSON.stringify(info)}`);
+          const vc = String(info?.video_codec || '').toUpperCase();
+          if (vc) logDiag(`streamInfo.video_codec=${vc} size=${info?.video_width || 0}x${info?.video_height || 0} fps=${info?.fps ?? ''} audio=${info?.audio_codec || ''}`);
+          if (vc.includes('265') || vc.includes('HEVC') || vc.includes('H265')) {
+            logDiag('结论：video_codec=H265/HEVC，浏览器大概率无法解码，需要改为 H264。');
+          }
+        } catch (e) {
+          logDiag(`streamInfo: 失败 - ${e?.message || e}`);
+        }
+      });
+
+      const btnUseOfficialSdk = document.getElementById('btnUseOfficialSdk');
+      btnUseOfficialSdk?.addEventListener('click', async () => {
+        try {
+          const input = document.getElementById('playUrlInput');
+          const playUrl = (input instanceof HTMLInputElement) ? input.value.trim() : '';
+          if (!playUrl) { logDiag('SDK: 当前无播放URL'); return; }
+          await playWithOfficialSdk(playUrl);
+        } catch (e) {
+          logDiag(`SDK: 播放失败 - ${e?.message || e}`);
+          setStatus(`状态：SDK 播放失败 - ${e?.message || e}`);
+        }
+      });
+
+      const btnUseEasyPlayerJs = document.getElementById('btnUseEasyPlayerJs');
+      btnUseEasyPlayerJs?.addEventListener('click', async () => {
+        try {
+          const input = document.getElementById('playUrlInput');
+          const playUrl = (input instanceof HTMLInputElement) ? input.value.trim() : '';
+          if (!playUrl) { logDiag('EasyPlayer.js: 当前无播放URL'); return; }
+          destroyPlayers();
+          await playWithEasyPlayerJs(playUrl);
+        } catch (e) {
+          logDiag(`EasyPlayer.js: 播放失败 - ${e?.message || e}`);
+          setStatus(`状态：EasyPlayer.js 播放失败 - ${e?.message || e}`);
+        }
+      });
+    }
+
+    async function mountPlayer(url, proto) {
+      const v = document.getElementById('liveVideoEl');
+      if (!(v instanceof HTMLVideoElement)) throw new Error('未找到 video 元素');
+      v.pause();
+      v.removeAttribute('src');
+      v.load();
+
+      // 说明：WS_FLV/WS_FMP4/WebRTC 通常需要厂家 SDK 或特殊实现，这里先做最稳的 HLS/HTTP-FLV
+      if (proto === 'HLS') {
+        if (v.canPlayType('application/vnd.apple.mpegurl')) {
+          v.src = url;
+          await v.play().catch(() => {});
+          return;
+        }
+        if (window.Hls && window.Hls.isSupported()) {
+          const hls = new window.Hls({
+            enableWorker: true,
+            lowLatencyMode: true,
+            // 某些环境下首帧更稳
+            backBufferLength: 30,
+          });
+          state.hls = hls;
+          hls.loadSource(url);
+          hls.attachMedia(v);
+          await new Promise((resolve, reject) => {
+            let done = false;
+            const timer = setTimeout(() => {
+              if (!done) reject(new Error('HLS 加载超时（请检查 m3u8/分片请求是否 200，或是否被 CORS 拦截）'));
+            }, 12000);
+
+            function finishOk() {
+              if (done) return;
+              done = true;
+              clearTimeout(timer);
+              resolve();
+            }
+
+            function fail(msg) {
+              if (done) return;
+              done = true;
+              clearTimeout(timer);
+              reject(new Error(msg || 'HLS 播放失败'));
+            }
+
+            hls.on(window.Hls.Events.MANIFEST_PARSED, finishOk);
+            hls.on(window.Hls.Events.ERROR, (_evt, data) => {
+              // 注意：hls.js 会有大量非 fatal 的 ERROR；不能见错就失败
+              if (!data) return;
+              logDiag(`hls.error: fatal=${!!data.fatal} type=${data.type || ''} details=${data.details || ''}`);
+              if (!data.fatal) return;
+
+              const t = data.type || '';
+              if (t === window.Hls.ErrorTypes.NETWORK_ERROR) {
+                // 网络错误：尝试重载
+                try { hls.startLoad(); } catch {}
+                return;
+              }
+              if (t === window.Hls.ErrorTypes.MEDIA_ERROR) {
+                // 解码/媒体错误：尝试恢复
+                try { hls.recoverMediaError(); } catch {}
+                return;
+              }
+
+              fail(data?.details || data?.type || 'HLS fatal 错误');
+            });
+          });
+          await v.play().catch(() => {});
+          logDiag('HLS：播放器已挂载并尝试播放。');
+          return;
+        }
+        throw new Error('当前浏览器不支持 HLS（且 hls.js 不可用）');
+      }
+
+      if (proto === 'FLV') {
+        if (!window.flvjs || !window.flvjs.isSupported()) throw new Error('当前浏览器不支持 flv.js（或 MSE 不可用）');
+        // 注意：在严格 CSP 下，flv.js 默认会用 blob: worker；这里已放开 worker-src blob:
+        // 如仍被企业策略拦截，可把 enableWorker 改为 false（但性能会下降）。
+        const flv = window.flvjs.createPlayer({ type: 'flv', url, isLive: true }, { enableWorker: true, stashInitialSize: 128 });
+        state.flv = flv;
+        flv.attachMediaElement(v);
+        try {
+          flv.on(window.flvjs.Events.ERROR, (errType, errDetail) => {
+            logDiag(`flvjs.error: type=${errType} detail=${errDetail}`);
+          });
+        } catch {}
+        flv.load();
+        await v.play().catch(() => {});
+        logDiag('FLV：播放器已挂载并尝试播放。');
+        return;
+      }
+
+      // 其他协议先退化：直接把 url 塞给 video（若服务器返回的是可直接播放的地址也能播）
+      v.src = url;
+      await v.play().catch(() => {});
+    }
+
+    function setSelectedRow(rowEl) {
+      if (!rowEl) return;
+      tree?.querySelectorAll('.tree-row.selected').forEach(r => r.classList.remove('selected'));
+      rowEl.classList.add('selected');
+    }
+
+    function toggleFav(btn) {
+      const pressed = btn.getAttribute('aria-pressed') === 'true';
+      const next = !pressed;
+      btn.setAttribute('aria-pressed', String(next));
+      btn.textContent = next ? '★' : '☆';
+    }
+
+    function toggleGroup(li) {
+      if (!li || !li.classList.contains('tree-group')) return;
+      const expanded = li.getAttribute('aria-expanded') === 'true';
+      li.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+    }
+
+    function shuffle(arr) {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function getItemLabel(li) {
+      const labelEl = li?.querySelector(':scope > .tree-row .tree-label');
+      return (labelEl?.textContent || '').trim();
+    }
+
+    function getLeafItemsUnderGroup(groupLi) {
+      return Array.from(groupLi.querySelectorAll(':scope > .tree-group-list > .tree-item.tree-leaf'));
+    }
+
+    async function renderVideosForLeaf(leafLi) {
+      if (!videoGrid) return;
+      const deviceId = leafLi.getAttribute('data-device-id') || '';
+      const channelId = leafLi.getAttribute('data-channel-id') || '';
+      const name = getItemLabel(leafLi) || channelId || '通道';
+      if (deviceId && channelId) {
+        try {
+          await playCam(deviceId, channelId, name);
+          return;
+        } catch (e) {
+          setStatus(`状态：播放失败 - ${(e && e.message) ? e.message : String(e)}`);
+        }
+      }
+      // 兼容：如果是旧的静态 demo 节点，就只渲染占位
+      const id = leafLi.getAttribute('data-id') || channelId || 'cam';
+      renderVideoTiles([{ id, name }]);
+    }
+
+    function renderVideosForGroup(groupLi) {
+      if (!videoGrid) return;
+      const leaves = getLeafItemsUnderGroup(groupLi);
+      const cams = leaves.map(li => ({
+        id: li.getAttribute('data-channel-id') || li.getAttribute('data-id') || 'cam',
+        name: getItemLabel(li) || (li.getAttribute('data-channel-id') || li.getAttribute('data-id') || 'cam')
+      }));
+      if (cams.length === 0) {
+        videoGrid.innerHTML = `<div class="video-empty">该文件夹下暂无摄像机（0 路）</div>`;
+        return;
+      }
+      // 随机而动：每次点击都打乱顺序，并在超出上限时随机抽取一部分
+      const shuffled = shuffle(cams);
+      const picked = shuffled.slice(0, Math.min(MAX_VIDEO_TILES, shuffled.length));
+      renderVideoTiles(picked);
+    }
+
+    function renderVideoTiles(cams) {
+      if (!videoGrid) return;
+      const nowSeed = Date.now();
+      const isSingle = Array.isArray(cams) && cams.length === 1;
+      videoGrid.classList.toggle('is-single', isSingle);
+
+      if (isSingle) {
+        const cam = cams[0];
+        videoGrid.innerHTML = `
+          <div class="viewer" data-cam-id="${cam.id}">
+            <div class="viewer-video" aria-label="视频画面区域">
+              <div class="viewer-frame">
+                <div class="cctv-box" aria-label="CCTV 画幅（16:9）">
+                  <div class="video-placeholder dark" aria-hidden="true">请选择左侧真实通道（或先登录/加载通道）</div>
+                  <div class="cctv-osd tl">${new Date().toISOString().replace('T',' ').slice(0,19)}</div>
+                  <div class="cctv-osd br">${cam.name}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      videoGrid.innerHTML = cams.map((cam, idx) => {
+        return `
+          <div class="video-tile" data-cam-id="${cam.id}">
+            <div class="video-thumb">
+              <div class="video-placeholder light" aria-hidden="true">视频模拟</div>
+            </div>
+            <div class="video-meta">
+              <div>[${idx + 1}] ${cam.name}</div>
+              <div class="status"><span class="dot"></span>在线</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function textIncludes(haystack, needle) {
+      return haystack.toLowerCase().includes(needle.toLowerCase());
+    }
+
+    function filterTree(query) {
+      const q = (query || '').trim();
+      const hasQ = q.length > 0;
+
+      function processItem(li) {
+        const labelEl = li.querySelector(':scope > .tree-row .tree-label');
+        const selfLabel = (labelEl?.textContent || '').trim();
+        const selfMatch = !hasQ || textIncludes(selfLabel, q);
+
+        if (li.classList.contains('tree-group')) {
+          const children = li.querySelectorAll(':scope > .tree-group-list > .tree-item');
+          let anyChildMatch = false;
+          children.forEach(child => {
+            if (processItem(child)) anyChildMatch = true;
+          });
+
+          const show = selfMatch || anyChildMatch;
+          li.style.display = show ? '' : 'none';
+
+          // 搜索时：如果子项命中，则自动展开父节点，方便看到结果
+          if (hasQ && anyChildMatch) li.setAttribute('aria-expanded', 'true');
+
+          return show;
+        }
+
+        // 叶子节点
+        li.style.display = selfMatch ? '' : 'none';
+        return selfMatch;
+      }
+
+      tree?.querySelectorAll(':scope > .tree-item').forEach(li => processItem(li));
+    }
+
+    tree?.addEventListener('click', (e) => {
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+
+      const favBtn = target.closest('[data-tree-fav]');
+      if (favBtn instanceof HTMLButtonElement) {
+        toggleFav(favBtn);
+        e.stopPropagation();
+        return;
+      }
+
+      const toggleBtn = target.closest('[data-tree-toggle]');
+      if (toggleBtn instanceof HTMLButtonElement) {
+        const li = toggleBtn.closest('.tree-group');
+        toggleGroup(li);
+        // 点三角也视为选中该文件夹，并刷新右侧（随机而动）
+        const row = li?.querySelector(':scope > .tree-row');
+        if (row) setSelectedRow(row);
+        if (li) renderVideosForGroup(li);
+        e.stopPropagation();
+        return;
+      }
+
+      const row = target.closest('[data-tree-row]');
+      if (row instanceof HTMLElement) {
+        setSelectedRow(row);
+        const li = row.closest('.tree-item');
+        if (li?.classList.contains('tree-group')) {
+          renderVideosForGroup(li);
+        } else if (li?.classList.contains('tree-leaf')) {
+          renderVideosForLeaf(li);
+        }
+      }
+    });
+
+    // 支持按 Enter / 点击按钮 / 输入实时过滤
+    treeSearchBtn?.addEventListener('click', () => filterTree(treeSearchInput?.value || ''));
+    treeSearchInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') filterTree(treeSearchInput?.value || '');
+      if (e.key === 'Escape') { treeSearchInput.value = ''; filterTree(''); }
+    });
+    treeSearchInput?.addEventListener('input', () => filterTree(treeSearchInput.value || ''));
+
+    // 绑定按钮
+    btnLogin?.addEventListener('click', async () => {
+      try {
+        await doLogin();
+      } catch (e) {
+        setStatus(`状态：登录失败 - ${(e && e.message) ? e.message : String(e)}`);
+      }
+    });
+    btnLoadChannels?.addEventListener('click', async () => {
+      try {
+        await loadChannels();
+      } catch (e) {
+        setStatus(`状态：加载通道失败 - ${(e && e.message) ? e.message : String(e)}`);
+      }
+    });
+    btnLogout?.addEventListener('click', () => {
+      state.token = '';
+      saveState();
+      destroyPlayers();
+      renderChannelTree([]);
+      setStatus('状态：已退出（Token 已清除）。');
+    });
+
+    btnTestPlay?.addEventListener('click', () => {
+      testCurrentPlayUrl();
+    });
+    btnClearDiag?.addEventListener('click', () => {
+      diag.lines = [];
+      if (diagBox instanceof HTMLTextAreaElement) diagBox.value = '';
+    });
+    btnCopyDiag?.addEventListener('click', async () => {
+      const text = diag.lines.join('\n');
+      try {
+        await navigator.clipboard.writeText(text);
+        setStatus('状态：诊断已复制到剪贴板。');
+      } catch {
+        if (diagBox instanceof HTMLTextAreaElement) {
+          diagBox.focus();
+          diagBox.select();
+          setStatus('状态：请手动 Ctrl+C 复制诊断。');
+        }
+      }
+    });
+
+    // 初始化：恢复本地保存的 base/token/device
+    loadState();
+    // 如果用户用本地代理打开页面，默认把 upstreamUrl 保持为平台真实地址
+    state.upstreamUrl = normalizeUpstreamUrl(state.upstreamUrl || 'http://13.238.254.66:18000');
+    if (apiBaseInput) apiBaseInput.value = state.baseUrl;
+    if (apiUserInput) apiUserInput.value = state.username;
+    if (apiDeviceInput) apiDeviceInput.value = state.deviceId;
+    setStatus(state.token ? `状态：已检测到本地 Token（${state.username || '未知用户'}）。可直接“加载通道列表”。` : '状态：未登录。');
+    renderChannelTree([]);
+    logDiag(`init: origin=${location.origin} href=${location.href}`);
+    if (location.protocol === 'file:') {
+      logDiag('警告：你正在用 file:// 打开页面。浏览器通常会因为 CORS 拦截而无法拉取 HLS 分片/FLV 数据，导致黑屏。建议用本项目的本地代理方式打开（见 proxy_server.py）。');
+      setStatus('状态：检测到 file:// 打开。大概率会因 CORS 无法播放。建议用本地代理启动后用 http://127.0.0.1:8000 打开。');
+    }
+  </script>
+
+
+</body></html>

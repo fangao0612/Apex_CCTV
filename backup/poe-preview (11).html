@@ -1,0 +1,709 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta name="x-poe-datastore-behavior" content="local_only"><meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://code.jquery.com https://unpkg.com https://d3js.org https://threejs.org https://cdn.plot.ly https://stackpath.bootstrapcdn.com https://maps.googleapis.com https://cdn.tailwindcss.com https://ajax.googleapis.com https://kit.fontawesome.com https://cdn.datatables.net https://maxcdn.bootstrapcdn.com https://code.highcharts.com https://tako-static-assets-production.s3.amazonaws.com https://www.youtube.com https://fonts.googleapis.com https://fonts.gstatic.com https://pfst.cf2.poecdn.net https://puc.poecdn.net https://i.imgur.com https://wikimedia.org https://*.icons8.com https://*.giphy.com https://picsum.photos https://images.unsplash.com; frame-src 'self' https://www.youtube.com https://trytako.com; child-src 'self'; manifest-src 'self'; worker-src 'self'; upgrade-insecure-requests; block-all-mixed-content;">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>监控运营台 · Notion 风格</title>
+  <style>
+    :root{
+      --bg: #ffffff;
+      --text: #111827;
+      --muted: #6b7280;
+      --muted2:#9ca3af;
+      --border:#e5e7eb;
+      --surface:#ffffff;
+      --surface2:#f9fafb;
+      --hover:#f3f4f6;
+      --focus:#2563eb;
+
+      --radius: 10px;
+      --shadow: 0 1px 2px rgba(0,0,0,.04);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --ui: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "PingFang SC","Noto Sans CJK SC","Microsoft YaHei", sans-serif;
+
+      --ok:#16a34a;
+      --warn:#d97706;
+      --bad:#dc2626;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family:var(--ui);
+      background:var(--bg);
+      color:var(--text);
+    }
+    a{color:inherit; text-decoration:none}
+    button,input{font:inherit; color:inherit}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+    /* Shell */
+    .app{
+      min-height:100dvh;
+      display:flex;
+    }
+
+    /* Sidebar */
+    .sidebar{
+      width: 280px;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      padding: 14px 12px;
+      position: sticky;
+      top: 0;
+      height: 100dvh;
+      overflow:auto;
+    }
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding: 8px 10px;
+      border-radius: 8px;
+    }
+    .logo{
+      width: 28px; height: 28px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      display:grid;
+      place-items:center;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .brand .t{
+      display:flex; flex-direction:column; line-height:1.1;
+    }
+    .brand .t .name{font-weight:700; font-size:14px;}
+    .brand .t .desc{font-size:12px; color:var(--muted); margin-top:3px;}
+
+    .nav{
+      margin-top: 10px;
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+    .nav a{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      color: var(--muted);
+    }
+    .nav a:hover{background: var(--hover); color: var(--text);}
+    .nav a.active{
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .ico{width:18px;height:18px; display:inline-block; color: var(--muted2);}
+    .nav a.active .ico{color: var(--muted);}
+
+    .section{
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+    .section h4{
+      margin: 0 0 8px 0;
+      padding: 0 10px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing:.2px;
+      text-transform: uppercase;
+    }
+
+    .tree{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+    .tree button{
+      width:100%;
+      text-align:left;
+      border: 0;
+      background: transparent;
+      padding: 8px 10px;
+      border-radius: 8px;
+      color: var(--muted);
+      cursor:pointer;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .tree button:hover{background: var(--hover); color: var(--text);}
+    .tree button.active{
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .pill{
+      font-size:12px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      padding: 2px 8px;
+      border-radius: 999px;
+      color: var(--muted);
+      white-space:nowrap;
+    }
+
+    /* Main */
+    .main{
+      flex:1;
+      min-width:0;
+      display:flex;
+      flex-direction:column;
+    }
+
+    .topbar{
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(255,255,255,.92);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+    }
+    .topbar-inner{
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 12px 16px;
+      display:flex;
+      align-items:center;
+      gap: 12px;
+    }
+    .search{
+      flex:1;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      min-width: 220px;
+    }
+    .search input{
+      border:0;
+      outline:none;
+      width:100%;
+      background: transparent;
+    }
+    .kbd{
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted2);
+      border: 1px solid var(--border);
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .actions{
+      display:flex;
+      gap:8px;
+      align-items:center;
+    }
+    .btn{
+      border: 1px solid var(--border);
+      background: var(--surface);
+      padding: 8px 10px;
+      border-radius: 10px;
+      cursor:pointer;
+      box-shadow: var(--shadow);
+    }
+    .btn:hover{background: var(--hover);}
+    .btn.primary{
+      border-color: rgba(37,99,235,.25);
+      background: rgba(37,99,235,.06);
+    }
+
+    /* Content layout */
+    .content{
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 16px;
+      display:grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: 16px;
+      align-items:start;
+    }
+
+    .page-title{
+      grid-column: 1 / -1;
+      padding: 6px 2px 2px 2px;
+    }
+    .page-title h1{
+      margin:0;
+      font-size: 20px;
+      letter-spacing:.2px;
+    }
+    .page-title p{
+      margin:8px 0 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .card{
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+    }
+    .card .hd{
+      padding: 12px 12px 10px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .card .hd .t{
+      display:flex; flex-direction:column; gap:4px;
+      min-width:0;
+    }
+    .card .hd .t .h{
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .card .hd .t .s{
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .card .bd{padding: 12px;}
+
+    /* Video placeholder (Notion-like: simple) */
+    .video{
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface2);
+      height: 360px;
+      display:flex;
+      flex-direction:column;
+      justify-content:space-between;
+      overflow:hidden;
+    }
+    .video .top{
+      padding: 10px;
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      align-items:center;
+      justify-content:space-between;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,.65);
+    }
+    .chips{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+    .chip{
+      font-size: 12px;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      border-radius: 999px;
+      padding: 4px 10px;
+      white-space:nowrap;
+    }
+    .dot{width:8px;height:8px;border-radius:999px; display:inline-block; margin-right:6px; vertical-align:middle;}
+    .dot.ok{background: var(--ok);}
+    .dot.warn{background: var(--warn);}
+    .dot.bad{background: var(--bad);}
+
+    .video .mid{
+      flex:1;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      color: var(--muted);
+      padding: 16px;
+      text-align:center;
+      line-height:1.6;
+    }
+    .video .bottom{
+      padding: 10px;
+      border-top: 1px solid var(--border);
+      background: rgba(255,255,255,.65);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .meta{
+      display:flex; flex-direction:column; gap:3px;
+      min-width: 220px;
+    }
+    .meta .cam{font-weight:700; font-size: 13px;}
+    .meta .sub{font-family: var(--mono); font-size: 12px; color: var(--muted);}
+    .btnrow{display:flex; gap:8px; flex-wrap:wrap;}
+
+    /* Table list (Notion style) */
+    table{
+      width:100%;
+      border-collapse: separate;
+      border-spacing:0;
+      font-size: 13px;
+    }
+    thead th{
+      text-align:left;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 10px;
+      background: var(--surface);
+    }
+    tbody td{
+      border-bottom: 1px solid var(--border);
+      padding: 10px 10px;
+      color: var(--text);
+      vertical-align:top;
+    }
+    tbody tr:hover td{background: var(--hover);}
+    .tag{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      font-size: 12px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      padding: 3px 8px;
+      border-radius: 999px;
+      color: var(--muted);
+      white-space:nowrap;
+    }
+    .tag b{font-weight:700; color: var(--text);}
+    .rightcol{
+      display:flex;
+      flex-direction:column;
+      gap: 16px;
+      min-width:0;
+    }
+    .kv{
+      display:grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .kv:last-child{border-bottom:0}
+    .kv .k{color: var(--muted); font-size: 12px;}
+    .kv .v{font-weight: 700; font-size: 13px;}
+
+    /* Responsive */
+    @media (max-width: 980px){
+      .sidebar{display:none;}
+      .content{grid-template-columns: 1fr;}
+      .meta{min-width: 0}
+      .video{height: 320px;}
+    }
+    @media (max-width: 520px){
+      .topbar-inner{gap:8px}
+      .kbd{display:none;}
+      .video{height: 280px;}
+    }
+
+    /* Focus */
+    :focus-visible{
+      outline: 2px solid rgba(37,99,235,.35);
+      outline-offset: 2px;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar" aria-label="侧边栏">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">N</div>
+        <div class="t">
+          <div class="name">运营台</div>
+          <div class="desc">监控 / 告警 / 运维</div>
+        </div>
+      </div>
+
+      <nav class="nav" aria-label="导航">
+        <a class="active" href="#">
+          <span class="ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M4 10h16v10H4V10Z" stroke="currentColor" stroke-width="1.8"></path><path d="M8 10V6h8v4" stroke="currentColor" stroke-width="1.8"></path></svg>
+          </span>
+          总览
+        </a>
+        <a href="#">
+          <span class="ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg>
+          </span>
+          设备
+        </a>
+        <a href="#">
+          <span class="ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z" stroke="currentColor" stroke-width="1.8"></path><path d="M12 8v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg>
+          </span>
+          事件
+        </a>
+        <a href="#">
+          <span class="ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M7 7h10v10H7V7Z" stroke="currentColor" stroke-width="1.8"></path><path d="M9 9h6v6H9V9Z" fill="currentColor" opacity=".08"></path></svg>
+          </span>
+          健康
+        </a>
+      </nav>
+
+      <div class="section">
+        <h4>组织 / 设备</h4>
+        <div class="tree" role="tree" aria-label="设备树">
+          <button class="active" type="button">
+            <span>主控机房</span><span class="pill">在线</span>
+          </button>
+          <button type="button">
+            <span>A区 · 园区大门</span><span class="pill">12</span>
+          </button>
+          <button type="button">
+            <span>B区 · 仓储</span><span class="pill">36</span>
+          </button>
+          <button type="button">
+            <span>C区 · 停车场</span><span class="pill">18</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="main">
+      <header class="topbar" aria-label="顶部栏">
+        <div class="topbar-inner">
+          <div class="search" role="search" aria-label="搜索">
+            <span class="ico" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" stroke="currentColor" stroke-width="1.8"></path><path d="M16.4 16.4 21 21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg>
+            </span>
+            <input id="q" placeholder="搜索设备 / 通道 / 事件…">
+            <span class="kbd">⌘K</span>
+          </div>
+
+          <div class="actions">
+            <button class="btn" type="button">新建工单</button>
+            <button class="btn primary" type="button">导出</button>
+          </div>
+        </div>
+      </header>
+
+      <main class="content">
+        <div class="page-title">
+          <h1>总览</h1>
+          <p>简单朴实的运营工作台：左侧是组织与入口，主区以“画面 + 列表”为核心，右侧是关键摘要，避免夸张大图表。</p>
+        </div>
+
+        <!-- Left column -->
+        <section class="card">
+          <div class="hd">
+            <div class="t">
+              <div class="h">实时画面</div>
+              <div class="s">主控机房 / 通道 CAM-01（此处为占位，可接入 WebRTC/HLS）</div>
+            </div>
+            <span class="tag"><span class="dot ok"></span><b>在线</b></span>
+          </div>
+          <div class="bd">
+            <div class="video" aria-label="视频占位区域">
+              <div class="top">
+                <div class="chips">
+                  <span class="chip"><span class="dot ok"></span>延迟 180ms</span>
+                  <span class="chip">丢包 0.2%</span>
+                  <span class="chip">1080p / 25fps</span>
+                </div>
+                <div class="chips">
+                  <span class="chip">实时</span>
+                  <span class="chip">主码流</span>
+                </div>
+              </div>
+
+              <div class="mid">
+                <div>
+                  <div style="font-weight:700; color:var(--text); margin-bottom:6px;">视频画面占位</div>
+                  <div style="font-size:13px; color:var(--muted);">
+                    这里保持“轻界面”，不做整屏蓝底和夸张仪表盘。<br>
+                    重点信息在顶部 chip 与底部元信息。
+                  </div>
+                </div>
+              </div>
+
+              <div class="bottom">
+                <div class="meta">
+                  <div class="cam">主控机房 · 走廊 A1</div>
+                  <div class="sub">CAM-01 · H.265 · 2026-01-23 10:18:19</div>
+                </div>
+                <div class="btnrow">
+                  <button class="btn" type="button">回放</button>
+                  <button class="btn" type="button">抓拍</button>
+                  <button class="btn" type="button">标注</button>
+                </div>
+              </div>
+            </div>
+
+            <div style="height:14px"></div>
+
+            <div class="card" style="border-radius:12px;">
+              <div class="hd" style="border-bottom:1px solid var(--border);">
+                <div class="t">
+                  <div class="h">事件（列表视图）</div>
+                  <div class="s">用表格承载信息密度，更接近 Notion 的工作流。</div>
+                </div>
+                <span class="tag">近 24h</span>
+              </div>
+              <div class="bd" style="padding:0;">
+                <div style="overflow:auto;">
+                  <table aria-label="事件表格">
+                    <thead>
+                      <tr>
+                        <th style="min-width:140px;">级别</th>
+                        <th style="min-width:220px;">标题</th>
+                        <th style="min-width:140px;">位置</th>
+                        <th style="min-width:130px;">时间</th>
+                        <th style="min-width:120px;">状态</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><span class="tag"><span class="dot bad"></span><b>P1</b>&nbsp;严重</span></td>
+                        <td>画面遮挡</td>
+                        <td>主控机房 · CAM-01</td>
+                        <td style="font-family:var(--mono); color:var(--muted);">10:18</td>
+                        <td><span class="tag">未处理</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="tag"><span class="dot warn"></span><b>P2</b>&nbsp;重要</span></td>
+                        <td>逆行检测</td>
+                        <td>C区 · CAM-18</td>
+                        <td style="font-family:var(--mono); color:var(--muted);">10:12</td>
+                        <td><span class="tag">处理中</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="tag"><span class="dot ok"></span><b>P3</b>&nbsp;一般</span></td>
+                        <td>区域入侵</td>
+                        <td>B区 · CAM-09</td>
+                        <td style="font-family:var(--mono); color:var(--muted);">09:58</td>
+                        <td><span class="tag">已确认</span></td>
+                      </tr>
+                      <tr>
+                        <td><span class="tag"><span class="dot ok"></span><b>P3</b>&nbsp;一般</span></td>
+                        <td>人员聚集</td>
+                        <td>A区 · CAM-04</td>
+                        <td style="font-family:var(--mono); color:var(--muted);">09:41</td>
+                        <td><span class="tag">已关闭</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- Right column -->
+        <aside class="rightcol">
+          <section class="card">
+            <div class="hd">
+              <div class="t">
+                <div class="h">摘要</div>
+                <div class="s">把核心 KPI 做成“清单”，而不是大图。</div>
+              </div>
+              <span class="tag">实时</span>
+            </div>
+            <div class="bd">
+              <div class="kv">
+                <div class="k">在线设备</div>
+                <div class="v">491</div>
+              </div>
+              <div class="kv">
+                <div class="k">离线设备</div>
+                <div class="v" style="color:var(--bad);">7</div>
+              </div>
+              <div class="kv">
+                <div class="k">未处理告警</div>
+                <div class="v" style="color:var(--bad);">3</div>
+              </div>
+              <div class="kv">
+                <div class="k">平均响应</div>
+                <div class="v">2m 14s</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="hd">
+              <div class="t">
+                <div class="h">系统健康</div>
+                <div class="s">朴实、可读的文字 + 小条形即可。</div>
+              </div>
+              <span class="tag">采样 30s</span>
+            </div>
+            <div class="bd">
+              <div style="display:flex; flex-direction:column; gap:12px;">
+                <div>
+                  <div style="display:flex; justify-content:space-between; gap:10px;">
+                    <div style="color:var(--muted); font-size:12px;">CPU</div>
+                    <div style="font-family:var(--mono); color:var(--muted); font-size:12px;">38%</div>
+                  </div>
+                  <div style="height:8px; background:var(--surface2); border:1px solid var(--border); border-radius:999px; overflow:hidden; margin-top:6px;">
+                    <div style="width:38%; height:100%; background:#e5e7eb;"></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div style="display:flex; justify-content:space-between; gap:10px;">
+                    <div style="color:var(--muted); font-size:12px;">内存</div>
+                    <div style="font-family:var(--mono); color:var(--muted); font-size:12px;">54%</div>
+                  </div>
+                  <div style="height:8px; background:var(--surface2); border:1px solid var(--border); border-radius:999px; overflow:hidden; margin-top:6px;">
+                    <div style="width:54%; height:100%; background:#e5e7eb;"></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div style="display:flex; justify-content:space-between; gap:10px;">
+                    <div style="color:var(--muted); font-size:12px;">存储</div>
+                    <div style="font-family:var(--mono); color:var(--muted); font-size:12px;">71%</div>
+                  </div>
+                  <div style="height:8px; background:var(--surface2); border:1px solid var(--border); border-radius:999px; overflow:hidden; margin-top:6px;">
+                    <div style="width:71%; height:100%; background:#e5e7eb;"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div style="margin-top:12px; color:var(--muted); font-size:12px; line-height:1.6;">
+                建议：把“趋势”放到二级页（健康/带宽），总览页只保留能驱动行动的状态与列表。
+              </div>
+            </div>
+          </section>
+        </aside>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    // Cmd/Ctrl+K focus search (Notion-like)
+    window.addEventListener('keydown', (e) => {
+      const isMac = navigator.platform.toUpperCase().includes('MAC');
+      const k = e.key.toLowerCase() === 'k';
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+      if (mod && k) {
+        const input = document.querySelector('#q');
+        if (input) { e.preventDefault(); input.focus(); }
+      }
+    });
+
+    // Sidebar tree active state (demo)
+    document.querySelectorAll('.tree button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tree button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+  </script>
+
+
+</body></html>
