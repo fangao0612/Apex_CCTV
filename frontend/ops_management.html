@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: http:; connect-src 'self' https: http: ws: wss:; media-src 'self' blob: https: http:; img-src 'self' data: blob: https: http:; frame-src 'self' https:; child-src 'self'; manifest-src 'self'; worker-src 'self' blob:;">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>运维管理 - Apex CCTV</title>
+  <link rel="stylesheet" href="styles/common.css">
+  <script src="api.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar" role="banner">
+      <div class="top-left"><strong>Apex CCTV</strong></div>
+      <div class="top-right"><span>管理员</span></div>
+    </header>
+
+    <div class="main">
+      <div class="breadcrumb">
+        <strong>配置</strong>
+        <span style="color:#999;">|</span>
+        <span>运维管理</span>
+      </div>
+
+      <section class="page" style="display:grid;gap:16px;align-content:start;">
+        <div class="card" style="max-width:700px;">
+          <div class="card-hd">播放 URL 测试</div>
+          <div class="card-bd">
+            <div class="form-row">
+              <label for="testUrl">播放地址</label>
+              <input id="testUrl" placeholder="输入 m3u8 / flv 播放地址" spellcheck="false">
+            </div>
+            <div class="btn-row">
+              <button type="button" id="btnTest" class="btn btn-primary">测试该 URL</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="max-width:700px;">
+          <div class="card-hd">播放诊断输出</div>
+          <div class="card-bd">
+            <textarea id="diagBox" readonly placeholder="诊断日志..." style="width:100%;min-height:280px;resize:vertical;font-family:monospace;font-size:12px;padding:10px;border:1px solid #d0d7de;border-radius:var(--radius);background:#fafbfc;"></textarea>
+            <div class="btn-row">
+              <button type="button" id="btnClear" class="btn">清空</button>
+              <button type="button" id="btnCopy" class="btn">复制</button>
+              <button type="button" id="btnLoadDiag" class="btn">从视频页加载</button>
+            </div>
+          </div>
+          <div style="padding:10px 16px;border-top:1px solid var(--border);font-size:13px;color:#666;" id="statusRow">就绪。</div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="nav.js"></script>
+  <script src="i18n.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var api = window.ApexApi;
+    var diagBox = document.getElementById('diagBox');
+    var statusRow = document.getElementById('statusRow');
+
+    function setStatus(msg) { if (statusRow) statusRow.textContent = msg; }
+
+    function logDiag(line) {
+      var s = '[' + new Date().toISOString().replace('T', ' ').slice(0, 19) + '] ' + String(line);
+      diagBox.value = diagBox.value ? diagBox.value + '\n' + s : s;
+      diagBox.scrollTop = diagBox.scrollHeight;
+    }
+
+    document.getElementById('btnLoadDiag').addEventListener('click', function () {
+      try {
+        var saved = localStorage.getItem(api.DIAG_KEY) || '';
+        if (saved) { diagBox.value = saved; diagBox.scrollTop = diagBox.scrollHeight; setStatus('已加载。'); }
+        else setStatus('暂无诊断日志。');
+      } catch (e) { setStatus('加载失败。'); }
+    });
+
+    document.getElementById('btnClear').addEventListener('click', function () {
+      diagBox.value = '';
+      try { localStorage.removeItem(api.DIAG_KEY); } catch (e) {}
+      setStatus('已清空。');
+    });
+
+    document.getElementById('btnCopy').addEventListener('click', async function () {
+      if (!diagBox.value) { setStatus('空。'); return; }
+      try { await navigator.clipboard.writeText(diagBox.value); setStatus('已复制。'); }
+      catch (e) { diagBox.focus(); diagBox.select(); setStatus('请手动 Ctrl+C。'); }
+    });
+
+    document.getElementById('btnTest').addEventListener('click', async function () {
+      var url = document.getElementById('testUrl').value.trim();
+      if (!url) { setStatus('请输入地址。'); return; }
+
+      logDiag('==== 测试开始 ====');
+      logDiag('url=' + url);
+
+      try {
+        if (/\.m3u8(\?|$)/i.test(url)) {
+          var res = await fetch(url);
+          var text = await res.text();
+          logDiag('playlist: status=' + res.status + ' ct=' + (res.headers.get('content-type') || ''));
+          logDiag('head: ' + text.slice(0, 400));
+          setStatus('M3U8 探测完成。');
+        } else if (/\.flv(\?|$)/i.test(url)) {
+          var res = await fetch(url, { headers: { Range: 'bytes=0-2047' } });
+          logDiag('flv: status=' + res.status + ' ct=' + (res.headers.get('content-type') || ''));
+          setStatus('FLV 探测完成。');
+        } else {
+          var res = await fetch(url);
+          logDiag('generic: status=' + res.status);
+          setStatus('探测完成。');
+        }
+      } catch (e) {
+        logDiag('失败：' + (e.message || e));
+        setStatus('探测失败。');
+      }
+      logDiag('==== 测试结束 ====');
+    });
+
+    try { var saved = localStorage.getItem(api.DIAG_KEY) || ''; if (saved) diagBox.value = saved; } catch (e) {}
+  })();
+  </script>
+</body>
+</html>

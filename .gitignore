@@ -6,6 +6,13 @@ terminals/
 *.log
 *.tmp
 
-# Local secrets / configs (add your own if needed)
+# Local secrets / configs
 .env
+.env.local
+.env.production
 
+# Vercel
+frontend/.vercel/
+
+# Node (if ever added)
+node_modules/

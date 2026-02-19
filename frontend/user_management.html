@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: http:; connect-src 'self' https: http: ws: wss:; media-src 'self' blob: https: http:; img-src 'self' data: blob: https: http:; frame-src 'self' https:; child-src 'self'; manifest-src 'self'; worker-src 'self' blob:;">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>用户管理 - Apex CCTV</title>
+  <link rel="stylesheet" href="styles/common.css">
+  <script src="api.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar" role="banner">
+      <div class="top-left"><strong>Apex CCTV</strong></div>
+      <div class="top-right"><span>管理员</span></div>
+    </header>
+
+    <div class="main">
+      <div class="breadcrumb">
+        <strong>用户管理</strong>
+        <span style="color:#999;">|</span>
+        <span>账号及权限</span>
+      </div>
+
+      <section class="page">
+        <!-- Tabs: Users / Roles -->
+        <div style="display:flex;gap:0;margin-bottom:16px;">
+          <button class="btn" id="tabUsers" style="border-radius:var(--radius) 0 0 var(--radius);background:var(--primary);color:#fff;border-color:var(--primary);">用户管理</button>
+          <button class="btn" id="tabRoles" style="border-radius:0 var(--radius) var(--radius) 0;">角色管理</button>
+        </div>
+
+        <!-- User management section -->
+        <div id="userSection">
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <button type="button" id="btnAdd" class="btn btn-primary" style="font-size:12px;">+ 添加用户</button>
+              <button type="button" id="btnRefreshUsers" class="btn" style="font-size:12px;">刷新</button>
+              <label style="font-size:12px;">
+                角色
+                <select id="filterRole" style="font-size:12px;">
+                  <option value="">全部</option>
+                </select>
+              </label>
+            </div>
+            <div class="toolbar-right">
+              <input id="keyword" placeholder="用户名 / 昵称" style="font-size:12px;">
+              <button type="button" id="btnSearch" class="btn" style="font-size:12px;">搜</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:80px;">ID</th>
+                  <th style="width:180px;">用户登录名</th>
+                  <th style="width:180px;">用户昵称</th>
+                  <th style="width:140px;">角色</th>
+                  <th style="width:200px;">创建时间</th>
+                  <th style="width:160px;">操作</th>
+                </tr>
+              </thead>
+              <tbody id="tbody"></tbody>
+            </table>
+          </div>
+
+          <div class="pager">
+            <div class="left">
+              <span id="countText">共 0 条</span>
+              <label style="font-size:12px;">
+                每页
+                <select id="pageSize" style="font-size:12px;">
+                  <option value="10" selected>10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                </select>
+                条
+              </label>
+            </div>
+            <div class="right">
+              <button type="button" id="btnPrev" class="btn" style="font-size:12px;">上一页</button>
+              <span id="pageText">第 1 / 1 页</span>
+              <button type="button" id="btnNext" class="btn" style="font-size:12px;">下一页</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Role management section (hidden by default) -->
+        <div id="roleSection" style="display:none;">
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <button type="button" id="btnAddRole" class="btn btn-primary" style="font-size:12px;">+ 添加角色</button>
+              <button type="button" id="btnRefreshRoles" class="btn" style="font-size:12px;">刷新</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:80px;">ID</th>
+                  <th style="width:200px;">角色名称</th>
+                  <th>描述 / 权限</th>
+                  <th style="width:160px;">操作</th>
+                </tr>
+              </thead>
+              <tbody id="roleTbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="apiStatus" class="status-box" style="margin-top:16px;font-size:12px;color:#666;"></div>
+      </section>
+    </div>
+  </div>
+
+  <dialog id="dlg">
+    <div class="dlg-hd">
+      <strong id="dlgTitle">添加用户</strong>
+      <button type="button" id="btnCloseDlg" style="font-size:18px;">&times;</button>
+    </div>
+    <div class="dlg-bd">
+      <form id="formUser">
+        <div class="form-grid">
+          <label for="fUsername">登录名</label>
+          <input id="fUsername" required placeholder="例如：operator01">
+          <label for="fNickname">昵称</label>
+          <input id="fNickname" required placeholder="例如：操作员小王">
+          <label for="fRole">角色</label>
+          <select id="fRole" required>
+            <option value="admin">管理员 (admin)</option>
+            <option value="operator">操作员 (operator)</option>
+            <option value="viewer" selected>观看者 (viewer)</option>
+          </select>
+          <label for="fPassword">密码</label>
+          <input id="fPassword" type="password" placeholder="编辑时留空不修改">
+        </div>
+      </form>
+    </div>
+    <div class="dlg-ft">
+      <button type="button" id="btnCancel" class="btn">取消</button>
+      <button type="button" id="btnSave" class="btn btn-primary">保存</button>
+    </div>
+  </dialog>
+
+  <dialog id="roleDlg">
+    <div class="dlg-hd">
+      <strong id="roleDlgTitle">添加角色</strong>
+      <button type="button" id="btnCloseRoleDlg" style="font-size:18px;">&times;</button>
+    </div>
+    <div class="dlg-bd">
+      <form id="formRole">
+        <div class="form-grid">
+          <label for="fRoleName">角色名</label>
+          <input id="fRoleName" required placeholder="例如：operator">
+          <label for="fRoleDesc">描述</label>
+          <input id="fRoleDesc" placeholder="操作员，可查看和控制">
+          <label>设备权限</label>
+          <div id="devicePermissions" style="font-size:12px;color:#666;">
+            <label style="display:block;margin:4px 0;"><input type="checkbox" value="view" checked> 查看实时视频</label>
+            <label style="display:block;margin:4px 0;"><input type="checkbox" value="playback"> 录像回放</label>
+            <label style="display:block;margin:4px 0;"><input type="checkbox" value="ptz"> PTZ 控制</label>
+            <label style="display:block;margin:4px 0;"><input type="checkbox" value="talk"> 对讲</label>
+            <label style="display:block;margin:4px 0;"><input type="checkbox" value="manage"> 设备管理</label>
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="dlg-ft">
+      <button type="button" id="btnCancelRole" class="btn">取消</button>
+      <button type="button" id="btnSaveRole" class="btn btn-primary">保存</button>
+    </div>
+  </dialog>
+
+  <script src="nav.js"></script>
+  <script src="i18n.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var api = window.ApexApi;
+    var state = api.state;
+
+    var users = [];
+    var roles = [
+      { id: 1, name: 'admin', desc: '管理员 - 全部权限', permissions: ['view','playback','ptz','talk','manage'] },
+      { id: 2, name: 'operator', desc: '操作员 - 查看/控制', permissions: ['view','playback','ptz','talk'] },
+      { id: 3, name: 'viewer', desc: '观看者 - 仅查看', permissions: ['view'] },
+    ];
+    var page = 1, pageSize = 10;
+    var editingId = null;
+    var editingRoleId = null;
+    var useApi = false;
+
+    var tbody = document.getElementById('tbody');
+    var countText = document.getElementById('countText');
+    var pageText = document.getElementById('pageText');
+    var btnPrev = document.getElementById('btnPrev');
+    var btnNext = document.getElementById('btnNext');
+    var keywordEl = document.getElementById('keyword');
+    var filterRoleEl = document.getElementById('filterRole');
+    var pageSizeEl = document.getElementById('pageSize');
+    var apiStatusEl = document.getElementById('apiStatus');
+
+    function setApiStatus(msg) { if (apiStatusEl) apiStatusEl.textContent = msg; }
+
+    // ── Tab switching ──
+    document.getElementById('tabUsers').addEventListener('click', function () {
+      document.getElementById('userSection').style.display = '';
+      document.getElementById('roleSection').style.display = 'none';
+      this.style.background = 'var(--primary)'; this.style.color = '#fff'; this.style.borderColor = 'var(--primary)';
+      document.getElementById('tabRoles').style.background = ''; document.getElementById('tabRoles').style.color = ''; document.getElementById('tabRoles').style.borderColor = '';
+    });
+    document.getElementById('tabRoles').addEventListener('click', function () {
+      document.getElementById('userSection').style.display = 'none';
+      document.getElementById('roleSection').style.display = '';
+      this.style.background = 'var(--primary)'; this.style.color = '#fff'; this.style.borderColor = 'var(--primary)';
+      document.getElementById('tabUsers').style.background = ''; document.getElementById('tabUsers').style.color = ''; document.getElementById('tabUsers').style.borderColor = '';
+      renderRoles();
+    });
+
+    // ── Load users from API ──
+    async function fetchUsers() {
+      if (!state.token) {
+        setApiStatus('未登录，显示本地模拟数据。请先到基础配置登录。');
+        useApi = false;
+        users = [
+          { id: 1, username: 'easycvr', nickname: '管理员', role: 'admin', createdAt: '2026-01-23 17:18:13' },
+          { id: 2, username: 'operator01', nickname: '操作员', role: 'operator', createdAt: '2026-02-01 10:00:00' },
+          { id: 3, username: 'viewer01', nickname: '观看者', role: 'viewer', createdAt: '2026-02-05 14:30:00' },
+        ];
+        render();
+        return;
+      }
+
+      try {
+        var json = await api.apiGet('/api/v1/users', { start: 0, limit: 200 }, state.token);
+        var r = api.unwrapEasyDarwin(json);
+        if (r.ok) {
+          var list = r.body.Users || r.body.users || r.body.Data || r.body.data || [];
+          if (Array.isArray(list) && list.length > 0) {
+            useApi = true;
+            users = list.map(function (u, i) {
+              return {
+                id: u.ID || u.id || (i + 1),
+                username: u.Username || u.username || u.LoginName || u.loginName || '',
+                nickname: u.Nickname || u.nickname || u.Name || u.name || '',
+                role: u.Role || u.role || u.RoleName || u.roleName || 'viewer',
+                createdAt: u.CreatedAt || u.createdAt || u.CreateTime || u.createTime || '',
+              };
+            });
+            setApiStatus('已从后端加载 ' + users.length + ' 个用户。');
+            render();
+            return;
+          }
+        }
+        setApiStatus('后端用户列表为空或格式不匹配，使用本地模拟。');
+      } catch (e) {
+        setApiStatus('API请求失败（' + (e.message || e) + '），使用本地模拟。');
+      }
+
+      useApi = false;
+      users = [
+        { id: 1, username: 'easycvr', nickname: '管理员', role: 'admin', createdAt: '2026-01-23 17:18:13' },
+        { id: 2, username: 'operator01', nickname: '操作员', role: 'operator', createdAt: '2026-02-01 10:00:00' },
+      ];
+      render();
+    }
+
+    async function fetchRoles() {
+      if (!state.token) return;
+      try {
+        var json = await api.apiGet('/api/v1/roles', {}, state.token);
+        var r = api.unwrapEasyDarwin(json);
+        if (r.ok) {
+          var list = r.body.Roles || r.body.roles || r.body.Data || r.body.data || [];
+          if (Array.isArray(list) && list.length > 0) {
+            roles = list.map(function (rl, i) {
+              return {
+                id: rl.ID || rl.id || (i + 1),
+                name: rl.Name || rl.name || rl.RoleName || rl.roleName || '',
+                desc: rl.Desc || rl.desc || rl.Description || rl.description || '',
+                permissions: rl.Permissions || rl.permissions || [],
+              };
+            });
+          }
+        }
+      } catch (e) {}
+      updateRoleFilter();
+    }
+
+    function updateRoleFilter() {
+      var val = filterRoleEl.value;
+      filterRoleEl.innerHTML = '<option value="">全部</option>';
+      roles.forEach(function (r) {
+        var opt = document.createElement('option');
+        opt.value = r.name;
+        opt.textContent = r.name;
+        filterRoleEl.appendChild(opt);
+      });
+      filterRoleEl.value = val;
+    }
+
+    function esc(str) { return String(str || '').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    function getFiltered() {
+      var kw = (keywordEl.value || '').trim().toLowerCase();
+      var role = filterRoleEl.value;
+      return users.filter(function (u) {
+        var kwOk = !kw || (u.username || '').toLowerCase().includes(kw) || (u.nickname || '').toLowerCase().includes(kw);
+        var roleOk = !role || u.role === role;
+        return kwOk && roleOk;
+      });
+    }
+
+    function render() {
+      var filtered = getFiltered();
+      var total = filtered.length;
+      var totalPages = Math.max(1, Math.ceil(total / pageSize));
+      if (page > totalPages) page = totalPages;
+      if (page < 1) page = 1;
+      var start = (page - 1) * pageSize;
+      var rows = filtered.slice(start, start + pageSize);
+
+      countText.textContent = '共 ' + total + ' 条';
+      pageText.textContent = '第 ' + page + ' / ' + totalPages + ' 页';
+      btnPrev.disabled = page <= 1;
+      btnNext.disabled = page >= totalPages;
+
+      tbody.innerHTML = rows.map(function (u) {
+        var roleLabel = u.role;
+        var roleObj = roles.find(function (r) { return r.name === u.role; });
+        if (roleObj) roleLabel = roleObj.name;
+        return '<tr data-id="' + u.id + '"><td>' + u.id + '</td><td>' + esc(u.username) + '</td><td>' + esc(u.nickname) + '</td><td><span style="background:#e3f2fd;color:var(--primary);padding:2px 8px;border-radius:10px;font-size:12px;">' + esc(roleLabel) + '</span></td><td>' + esc(u.createdAt) + '</td><td><div class="ops"><button type="button" data-act="edit">编辑</button><button type="button" data-act="delete" class="danger">删除</button></div></td></tr>';
+      }).join('');
+    }
+
+    function renderRoles() {
+      var roleTbody = document.getElementById('roleTbody');
+      roleTbody.innerHTML = roles.map(function (r) {
+        var perms = (r.permissions || []).join(', ') || '无';
+        return '<tr data-role-id="' + r.id + '"><td>' + r.id + '</td><td><strong>' + esc(r.name) + '</strong></td><td>' + esc(r.desc) + '<br><span style="font-size:11px;color:#999;">权限：' + perms + '</span></td><td><div class="ops"><button type="button" data-ract="edit">编辑</button><button type="button" data-ract="delete" class="danger">删除</button></div></td></tr>';
+      }).join('');
+    }
+
+    // ── Events ──
+    btnPrev.addEventListener('click', function () { page--; render(); });
+    btnNext.addEventListener('click', function () { page++; render(); });
+    pageSizeEl.addEventListener('change', function () { pageSize = Number(pageSizeEl.value) || 10; page = 1; render(); });
+    document.getElementById('btnSearch').addEventListener('click', function () { page = 1; render(); });
+    keywordEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') { page = 1; render(); } });
+    filterRoleEl.addEventListener('change', function () { page = 1; render(); });
+    document.getElementById('btnRefreshUsers').addEventListener('click', function () { fetchUsers(); });
+    document.getElementById('btnRefreshRoles').addEventListener('click', function () { fetchRoles().then(renderRoles); });
+
+    // ── User CRUD ──
+    tbody.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-act]');
+      if (!btn) return;
+      var tr = btn.closest('tr');
+      var id = Number(tr.getAttribute('data-id'));
+      var u = users.find(function (x) { return x.id === id; });
+      if (!u) return;
+
+      if (btn.getAttribute('data-act') === 'delete') {
+        if (!confirm('确定删除用户「' + u.username + '」？')) return;
+        if (useApi && state.token) {
+          api.apiGet('/api/v1/users/delete', { id: u.id }, state.token)
+            .then(function () { users = users.filter(function (x) { return x.id !== id; }); render(); setApiStatus('已删除'); })
+            .catch(function (err) { setApiStatus('删除失败：' + err.message); users = users.filter(function (x) { return x.id !== id; }); render(); });
+        } else {
+          users = users.filter(function (x) { return x.id !== id; });
+          render();
+        }
+        return;
+      }
+
+      if (btn.getAttribute('data-act') === 'edit') {
+        openDialog('edit', u);
+      }
+    });
+
+    var dlg = document.getElementById('dlg');
+    function openDialog(mode, u) {
+      editingId = mode === 'edit' ? u.id : null;
+      document.getElementById('dlgTitle').textContent = mode === 'edit' ? '编辑用户' : '添加用户';
+      document.getElementById('fUsername').value = mode === 'edit' ? u.username : '';
+      document.getElementById('fUsername').disabled = mode === 'edit';
+      document.getElementById('fNickname').value = mode === 'edit' ? u.nickname : '';
+      document.getElementById('fRole').value = mode === 'edit' ? u.role : 'viewer';
+      document.getElementById('fPassword').value = '';
+      dlg.showModal();
+    }
+
+    function closeDialog() { dlg.close(); }
+    document.getElementById('btnAdd').addEventListener('click', function () { openDialog('add'); });
+    document.getElementById('btnCloseDlg').addEventListener('click', closeDialog);
+    document.getElementById('btnCancel').addEventListener('click', closeDialog);
+    dlg.addEventListener('click', function (e) {
+      var rect = dlg.getBoundingClientRect();
+      if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) closeDialog();
+    });
+
+    document.getElementById('btnSave').addEventListener('click', async function () {
+      var form = document.getElementById('formUser');
+      if (!form.reportValidity()) return;
+      var payload = {
+        username: document.getElementById('fUsername').value.trim(),
+        nickname: document.getElementById('fNickname').value.trim(),
+        role: document.getElementById('fRole').value,
+        password: document.getElementById('fPassword').value,
+      };
+
+      if (useApi && state.token) {
+        try {
+          if (editingId != null) {
+            await api.apiPost('/api/v1/users/update', { id: editingId, nickname: payload.nickname, role: payload.role, password: payload.password || undefined }, state.token);
+          } else {
+            await api.apiPost('/api/v1/users/add', payload, state.token);
+          }
+          closeDialog();
+          await fetchUsers();
+          setApiStatus(editingId ? '用户已更新' : '用户已添加');
+        } catch (e) {
+          setApiStatus('保存失败：' + (e.message || e));
+        }
+        return;
+      }
+
+      if (editingId != null) {
+        var u = users.find(function (x) { return x.id === editingId; });
+        if (u) { u.nickname = payload.nickname; u.role = payload.role; }
+      } else {
+        var nextId = Math.max(0, ...users.map(function (u) { return u.id; })) + 1;
+        var now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+        users.unshift({ id: nextId, username: payload.username, nickname: payload.nickname, role: payload.role, createdAt: now });
+      }
+      closeDialog();
+      render();
+    });
+
+    // ── Role CRUD ──
+    var roleDlg = document.getElementById('roleDlg');
+    document.getElementById('btnAddRole').addEventListener('click', function () { openRoleDialog('add'); });
+    document.getElementById('btnCloseRoleDlg').addEventListener('click', function () { roleDlg.close(); });
+    document.getElementById('btnCancelRole').addEventListener('click', function () { roleDlg.close(); });
+
+    function openRoleDialog(mode, r) {
+      editingRoleId = mode === 'edit' ? r.id : null;
+      document.getElementById('roleDlgTitle').textContent = mode === 'edit' ? '编辑角色' : '添加角色';
+      document.getElementById('fRoleName').value = mode === 'edit' ? r.name : '';
+      document.getElementById('fRoleDesc').value = mode === 'edit' ? r.desc : '';
+      var perms = (mode === 'edit' && r.permissions) ? r.permissions : ['view'];
+      document.querySelectorAll('#devicePermissions input[type="checkbox"]').forEach(function (cb) {
+        cb.checked = perms.includes(cb.value);
+      });
+      roleDlg.showModal();
+    }
+
+    document.getElementById('btnSaveRole').addEventListener('click', function () {
+      var name = document.getElementById('fRoleName').value.trim();
+      var desc = document.getElementById('fRoleDesc').value.trim();
+      if (!name) return;
+      var perms = [];
+      document.querySelectorAll('#devicePermissions input[type="checkbox"]:checked').forEach(function (cb) { perms.push(cb.value); });
+
+      if (editingRoleId != null) {
+        var r = roles.find(function (x) { return x.id === editingRoleId; });
+        if (r) { r.name = name; r.desc = desc; r.permissions = perms; }
+      } else {
+        var nextId = Math.max(0, ...roles.map(function (r) { return r.id; })) + 1;
+        roles.push({ id: nextId, name: name, desc: desc, permissions: perms });
+      }
+      roleDlg.close();
+      renderRoles();
+      updateRoleFilter();
+    });
+
+    document.getElementById('roleTbody').addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-ract]');
+      if (!btn) return;
+      var tr = btn.closest('tr');
+      var id = Number(tr.getAttribute('data-role-id'));
+      var r = roles.find(function (x) { return x.id === id; });
+      if (!r) return;
+      if (btn.getAttribute('data-ract') === 'edit') { openRoleDialog('edit', r); }
+      if (btn.getAttribute('data-ract') === 'delete') {
+        if (!confirm('确定删除角色「' + r.name + '」？')) return;
+        roles = roles.filter(function (x) { return x.id !== id; });
+        renderRoles();
+        updateRoleFilter();
+      }
+    });
+
+    // ── Init ──
+    api.loadState();
+    updateRoleFilter();
+    fetchUsers();
+    fetchRoles();
+  })();
+  </script>
+</body>
+</html>

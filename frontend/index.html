@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: http:; connect-src 'self' https: http: ws: wss:; media-src 'self' blob: https: http:; img-src 'self' data: blob: https: http:; frame-src 'self' https:; child-src 'self'; manifest-src 'self'; worker-src 'self' blob:;">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Apex CCTV - 实时预览</title>
+  <link rel="stylesheet" href="styles/common.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.19.0/js/md5.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flv.js@1.6.2/dist/flv.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.2.0/crypto-js.min.js"></script>
+  <script src="vendor/EasyPlayer-pro.js"></script>
+  <script src="EasyPlayer.js/js/EasyPlayer-pro.js"></script>
+  <script src="api.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar" role="banner">
+      <div class="top-left"><strong>Apex CCTV</strong></div>
+      <div class="top-right"><span>管理员</span></div>
+    </header>
+
+    <div class="main-grid">
+      <!-- LEFT: device tree sidebar -->
+      <aside class="sidebar" aria-label="设备树">
+        <div class="sidebar-tabs">
+          <button class="sidebar-tab active" data-stab="devices">设备列表</button>
+          <button class="sidebar-tab" data-stab="favorites">收藏</button>
+        </div>
+        <div class="sidebar-search">
+          <input id="treeSearchInput" placeholder="搜索设备/通道">
+          <button type="button" id="treeSearchBtn">搜索</button>
+        </div>
+        <div class="sidebar-auth" aria-label="通道加载">
+          <div class="row">
+            <div class="label">设备ID</div>
+            <input id="apiDeviceInput" placeholder="如 8/22/24/26/27" spellcheck="false">
+          </div>
+          <div class="btnline">
+            <button type="button" id="btnLoadChannels" class="btn btn-primary" style="font-size:12px;padding:4px 10px;">加载通道</button>
+          </div>
+          <div class="hint" id="apiStatusHint">
+            未登录。<a href="base_config.html">去登录</a>
+          </div>
+        </div>
+        <div class="sidebar-body">
+          <ul class="tree" id="deviceTree" role="tree" aria-label="设备树"></ul>
+        </div>
+
+        <!-- PTZ control -->
+        <div class="ptz-section" id="ptzSection">
+          <div class="ptz-header" id="ptzToggleHeader">
+            <span>云台控制</span>
+            <span class="ptz-chevron"></span>
+          </div>
+          <div class="ptz-body">
+            <!-- Circular joystick -->
+            <div class="ptz-joystick">
+              <button class="ptz-quad" data-ptz="up" title="上">
+                <svg viewBox="0 0 10 6"><path d="M5 0L10 6H0z" fill="currentColor"/></svg>
+              </button>
+              <button class="ptz-quad" data-ptz="down" title="下">
+                <svg viewBox="0 0 10 6"><path d="M5 6L0 0h10z" fill="currentColor"/></svg>
+              </button>
+              <button class="ptz-quad" data-ptz="left" title="左">
+                <svg viewBox="0 0 6 10"><path d="M0 5L6 0v10z" fill="currentColor"/></svg>
+              </button>
+              <button class="ptz-quad" data-ptz="right" title="右">
+                <svg viewBox="0 0 6 10"><path d="M6 5L0 10V0z" fill="currentColor"/></svg>
+              </button>
+              <div class="ptz-center">
+                <svg viewBox="0 0 24 24"><path d="M17.65 6.35A7.96 7.96 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" fill="currentColor"/></svg>
+              </div>
+            </div>
+
+            <!-- Speed slider -->
+            <div class="ptz-speed">
+              <span class="label">减速</span>
+              <input type="range" id="ptzSpeedSlider" min="1" max="100" value="50">
+              <span class="label">加速</span>
+            </div>
+
+            <!-- Function buttons (text, 4+3 grid) -->
+            <div class="ptz-txt-grid">
+              <button class="ptz-txt-btn" data-fn="zoomin">焦距变大(+)</button>
+              <button class="ptz-txt-btn" data-fn="zoomout">焦距变小(-)</button>
+              <button class="ptz-txt-btn" data-fn="focusnear">焦点前调(+)</button>
+              <button class="ptz-txt-btn" data-fn="focusfar">焦点后调(-)</button>
+              <button class="ptz-txt-btn" data-fn="cruise">一键巡航</button>
+              <button class="ptz-txt-btn" data-fn="autofocus">辅助聚焦</button>
+              <button class="ptz-txt-btn" data-fn="tracking">移动跟踪</button>
+            </div>
+
+            <div class="ptz-more-row" id="ptzMoreToggle">
+              <span>更多功能</span>
+              <span class="ptz-more-arrow"></span>
+            </div>
+            <div class="ptz-more-panel" id="ptzMorePanel">
+              <div class="ptz-more-empty">暂无更多功能</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- CENTER: video area -->
+      <div class="video-area" id="videoArea">
+        <div class="video-container" id="videoContainer">
+          <video id="liveVideoEl" playsinline muted autoplay style="z-index:1;"></video>
+          <div id="sdkMount" style="position:absolute;inset:0;z-index:1;"></div>
+          <div id="codecOverlay" style="position:absolute;inset:0;z-index:2;display:none;padding:18px;color:rgba(255,255,255,.85);background:rgba(0,0,0,.7);font-size:13px;white-space:pre-wrap;"></div>
+          <div class="video-placeholder" id="videoPlaceholder">
+            <div class="vp-icon">&#9654;</div>
+            <div>请选择左侧通道开始播放</div>
+            <div style="font-size:12px;opacity:.5;">支持 HLS / HTTP-FLV / EasyPlayer H265</div>
+          </div>
+          <div class="osd osd-tl" id="osdTime"></div>
+          <div class="osd osd-br" id="osdName"></div>
+        </div>
+
+        <!-- Playback controls (hidden by default) -->
+        <div class="playback-controls" id="playbackControls">
+          <div class="playback-row">
+            <label>日期</label>
+            <input type="date" id="pbDate">
+            <label>开始</label>
+            <input type="time" id="pbStartTime" value="00:00:00" step="1">
+            <label>结束</label>
+            <input type="time" id="pbEndTime" value="23:59:59" step="1">
+            <button class="btn btn-primary" style="font-size:12px;padding:4px 12px;" id="btnQueryRecords">查询录像</button>
+            <button class="btn" style="font-size:12px;padding:4px 12px;" id="btnStartPlayback">开始回放</button>
+            <button class="btn" style="font-size:12px;padding:4px 12px;" id="btnStopPlayback">停止回放</button>
+            <select id="pbSpeed" style="font-size:12px;padding:4px 8px;border:1px solid rgba(255,255,255,.15);border-radius:4px;background:rgba(255,255,255,.06);color:rgba(255,255,255,.85);">
+              <option value="1">1x</option>
+              <option value="2">2x</option>
+              <option value="4">4x</option>
+              <option value="8">8x</option>
+            </select>
+          </div>
+          <div class="playback-timeline" id="pbTimeline">
+            <div class="progress" id="pbProgress"></div>
+          </div>
+          <div id="pbRecordList" style="margin-top:6px;font-size:11px;color:rgba(255,255,255,.4);max-height:60px;overflow:auto;"></div>
+        </div>
+
+        <!-- Video toolbar (live mode) -->
+        <div class="video-toolbar" id="liveToolbar" style="display:none">
+          <button type="button" id="btnPlay" title="播放">&#9654; 播放</button>
+          <button type="button" id="btnPause" title="暂停">&#10074;&#10074; 暂停</button>
+          <button type="button" id="btnSnapshot" title="抓拍">&#128247; 抓拍</button>
+          <button type="button" id="btnFullscreen" title="全屏">&#9974; 全屏</button>
+          <button type="button" id="btnTalk" title="对讲">&#127908; 对讲</button>
+          <select id="protoSelect" title="协议切换">
+            <option value="HLS">HLS</option>
+            <option value="FLV">HTTP-FLV</option>
+          </select>
+          <div class="spacer"></div>
+          <span class="status-text" id="statusText">就绪</span>
+        </div>
+
+      </div>
+
+      <!-- Bottom toolbar (HIKIOT style) -->
+      <div class="app-bottombar" id="appBottomBar">
+      <div class="bb-spacer"></div>
+      <div class="bb-tools">
+        <button type="button" id="bbStreamMgr" title="取流管理"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="currentColor"/></svg></button>
+        <button type="button" id="bbSplit" title="分割"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 3h8v8H3V3zm0 10h8v8H3v-8zm10-10h8v8h-8V3zm0 10h8v8h-8v-8z" fill="currentColor"/></svg></button>
+        <button type="button" id="bbStopPreview" title="停止预览"><svg viewBox="0 0 24 24" width="16" height="16"><rect x="5" y="5" width="14" height="14" rx="1" fill="currentColor"/></svg></button>
+        <button type="button" id="bbFullscreen" title="全屏"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" fill="currentColor"/></svg></button>
+        <span class="bb-sep"></span>
+        <button type="button" id="bbConfig" title="配置"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1115.6 12 3.6 3.6 0 0112 15.6z" fill="currentColor"/></svg></button>
+      </div>
+      <!-- Split layout popup -->
+      <div class="split-popup" id="splitPopup">
+        <div class="split-group">
+          <div class="split-group-title">标准分割</div>
+          <div class="split-options">
+            <button type="button" class="split-opt active" data-split="1" title="1画面"><svg viewBox="0 0 28 22" width="28" height="22"><rect x="1" y="1" width="26" height="20" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
+            <button type="button" class="split-opt" data-split="4" title="4画面"><svg viewBox="0 0 28 22" width="28" height="22"><rect x="1" y="1" width="26" height="20" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="14" y1="1" x2="14" y2="21" stroke="currentColor" stroke-width=".8"/><line x1="1" y1="11" x2="27" y2="11" stroke="currentColor" stroke-width=".8"/></svg></button>
+            <button type="button" class="split-opt" data-split="6" title="6画面"><svg viewBox="0 0 28 22" width="28" height="22"><rect x="1" y="1" width="26" height="20" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="18.3" y1="1" x2="18.3" y2="21" stroke="currentColor" stroke-width=".8"/><line x1="1" y1="14.3" x2="27" y2="14.3" stroke="currentColor" stroke-width=".8"/><line x1="18.3" y1="7.7" x2="27" y2="7.7" stroke="currentColor" stroke-width=".8"/><line x1="9.7" y1="14.3" x2="9.7" y2="21" stroke="currentColor" stroke-width=".8"/></svg></button>
+            <button type="button" class="split-opt" data-split="8" title="8画面"><svg viewBox="0 0 28 22" width="28" height="22"><rect x="1" y="1" width="26" height="20" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="20.5" y1="1" x2="20.5" y2="21" stroke="currentColor" stroke-width=".8"/><line x1="1" y1="16" x2="27" y2="16" stroke="currentColor" stroke-width=".8"/><line x1="20.5" y1="6" x2="27" y2="6" stroke="currentColor" stroke-width=".8"/><line x1="20.5" y1="11" x2="27" y2="11" stroke="currentColor" stroke-width=".8"/><line x1="7.5" y1="16" x2="7.5" y2="21" stroke="currentColor" stroke-width=".8"/><line x1="14" y1="16" x2="14" y2="21" stroke="currentColor" stroke-width=".8"/></svg></button>
+            <button type="button" class="split-opt" data-split="9" title="9画面"><svg viewBox="0 0 28 22" width="28" height="22"><rect x="1" y="1" width="26" height="20" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="9.7" y1="1" x2="9.7" y2="21" stroke="currentColor" stroke-width=".8"/><line x1="18.3" y1="1" x2="18.3" y2="21" stroke="currentColor" stroke-width=".8"/><line x1="1" y1="7.7" x2="27" y2="7.7" stroke="currentColor" stroke-width=".8"/><line x1="1" y1="14.3" x2="27" y2="14.3" stroke="currentColor" stroke-width=".8"/></svg></button>
+            <button type="button" class="split-opt" data-split="13" title="13画面"><svg viewBox="0 0 28 22" width="28" height="22"><rect x="1" y="1" width="26" height="20" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="14" y1="1" x2="14" y2="21" stroke="currentColor" stroke-width=".8"/><line x1="20.5" y1="1" x2="20.5" y2="21" stroke="currentColor" stroke-width=".8"/><line x1="7" y1="11" x2="7" y2="21" stroke="currentColor" stroke-width=".8"/><line x1="1" y1="11" x2="27" y2="11" stroke="currentColor" stroke-width=".8"/><line x1="14" y1="6" x2="27" y2="6" stroke="currentColor" stroke-width=".8"/><line x1="1" y1="16" x2="27" y2="16" stroke="currentColor" stroke-width=".8"/></svg></button>
+            <button type="button" class="split-opt" data-split="16" title="16画面"><svg viewBox="0 0 28 22" width="28" height="22"><rect x="1" y="1" width="26" height="20" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="7.5" y1="1" x2="7.5" y2="21" stroke="currentColor" stroke-width=".6"/><line x1="14" y1="1" x2="14" y2="21" stroke="currentColor" stroke-width=".6"/><line x1="20.5" y1="1" x2="20.5" y2="21" stroke="currentColor" stroke-width=".6"/><line x1="1" y1="6" x2="27" y2="6" stroke="currentColor" stroke-width=".6"/><line x1="1" y1="11" x2="27" y2="11" stroke="currentColor" stroke-width=".6"/><line x1="1" y1="16" x2="27" y2="16" stroke="currentColor" stroke-width=".6"/></svg></button>
+            <button type="button" class="split-opt" data-split="25" title="25画面"><svg viewBox="0 0 28 22" width="28" height="22"><rect x="1" y="1" width="26" height="20" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="6.2" y1="1" x2="6.2" y2="21" stroke="currentColor" stroke-width=".5"/><line x1="11.4" y1="1" x2="11.4" y2="21" stroke="currentColor" stroke-width=".5"/><line x1="16.6" y1="1" x2="16.6" y2="21" stroke="currentColor" stroke-width=".5"/><line x1="21.8" y1="1" x2="21.8" y2="21" stroke="currentColor" stroke-width=".5"/><line x1="1" y1="5" x2="27" y2="5" stroke="currentColor" stroke-width=".5"/><line x1="1" y1="9" x2="27" y2="9" stroke="currentColor" stroke-width=".5"/><line x1="1" y1="13" x2="27" y2="13" stroke="currentColor" stroke-width=".5"/><line x1="1" y1="17" x2="27" y2="17" stroke="currentColor" stroke-width=".5"/></svg></button>
+          </div>
+        </div>
+        <div class="split-group">
+          <div class="split-group-title">宽屏分割</div>
+          <div class="split-options">
+            <button type="button" class="split-opt" data-split="w4" title="宽屏4画面"><svg viewBox="0 0 32 18" width="32" height="18"><rect x="1" y="1" width="30" height="16" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="16" y1="1" x2="16" y2="17" stroke="currentColor" stroke-width=".8"/><line x1="1" y1="9" x2="31" y2="9" stroke="currentColor" stroke-width=".8"/></svg></button>
+            <button type="button" class="split-opt" data-split="w6" title="宽屏6画面"><svg viewBox="0 0 32 18" width="32" height="18"><rect x="1" y="1" width="30" height="16" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="11" y1="1" x2="11" y2="17" stroke="currentColor" stroke-width=".8"/><line x1="21" y1="1" x2="21" y2="17" stroke="currentColor" stroke-width=".8"/><line x1="1" y1="9" x2="31" y2="9" stroke="currentColor" stroke-width=".8"/></svg></button>
+            <button type="button" class="split-opt" data-split="w7" title="宽屏7画面"><svg viewBox="0 0 32 18" width="32" height="18"><rect x="1" y="1" width="30" height="16" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="11" y1="1" x2="11" y2="17" stroke="currentColor" stroke-width=".8"/><line x1="17.7" y1="1" x2="17.7" y2="17" stroke="currentColor" stroke-width=".8"/><line x1="24.3" y1="1" x2="24.3" y2="17" stroke="currentColor" stroke-width=".8"/><line x1="11" y1="9" x2="31" y2="9" stroke="currentColor" stroke-width=".8"/></svg></button>
+            <button type="button" class="split-opt" data-split="w9" title="宽屏9画面"><svg viewBox="0 0 32 18" width="32" height="18"><rect x="1" y="1" width="30" height="16" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="11" y1="1" x2="11" y2="17" stroke="currentColor" stroke-width=".8"/><line x1="21" y1="1" x2="21" y2="17" stroke="currentColor" stroke-width=".8"/><line x1="1" y1="6.3" x2="31" y2="6.3" stroke="currentColor" stroke-width=".8"/><line x1="1" y1="11.7" x2="31" y2="11.7" stroke="currentColor" stroke-width=".8"/></svg></button>
+            <button type="button" class="split-opt" data-split="w12" title="宽屏12画面"><svg viewBox="0 0 32 18" width="32" height="18"><rect x="1" y="1" width="30" height="16" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="8.5" y1="1" x2="8.5" y2="17" stroke="currentColor" stroke-width=".7"/><line x1="16" y1="1" x2="16" y2="17" stroke="currentColor" stroke-width=".7"/><line x1="23.5" y1="1" x2="23.5" y2="17" stroke="currentColor" stroke-width=".7"/><line x1="1" y1="6.3" x2="31" y2="6.3" stroke="currentColor" stroke-width=".7"/><line x1="1" y1="11.7" x2="31" y2="11.7" stroke="currentColor" stroke-width=".7"/></svg></button>
+            <button type="button" class="split-opt" data-split="w16" title="宽屏16画面"><svg viewBox="0 0 32 18" width="32" height="18"><rect x="1" y="1" width="30" height="16" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="8.5" y1="1" x2="8.5" y2="17" stroke="currentColor" stroke-width=".6"/><line x1="16" y1="1" x2="16" y2="17" stroke="currentColor" stroke-width=".6"/><line x1="23.5" y1="1" x2="23.5" y2="17" stroke="currentColor" stroke-width=".6"/><line x1="1" y1="5" x2="31" y2="5" stroke="currentColor" stroke-width=".6"/><line x1="1" y1="9" x2="31" y2="9" stroke="currentColor" stroke-width=".6"/><line x1="1" y1="13" x2="31" y2="13" stroke="currentColor" stroke-width=".6"/></svg></button>
+            <button type="button" class="split-opt" data-split="w24" title="宽屏24画面"><svg viewBox="0 0 32 18" width="32" height="18"><rect x="1" y="1" width="30" height="16" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="6" y1="1" x2="6" y2="17" stroke="currentColor" stroke-width=".5"/><line x1="11" y1="1" x2="11" y2="17" stroke="currentColor" stroke-width=".5"/><line x1="16" y1="1" x2="16" y2="17" stroke="currentColor" stroke-width=".5"/><line x1="21" y1="1" x2="21" y2="17" stroke="currentColor" stroke-width=".5"/><line x1="26" y1="1" x2="26" y2="17" stroke="currentColor" stroke-width=".5"/><line x1="1" y1="5" x2="31" y2="5" stroke="currentColor" stroke-width=".5"/><line x1="1" y1="9" x2="31" y2="9" stroke="currentColor" stroke-width=".5"/><line x1="1" y1="13" x2="31" y2="13" stroke="currentColor" stroke-width=".5"/></svg></button>
+          </div>
+        </div>
+        <div class="split-group">
+          <div class="split-group-title">自定义分割</div>
+          <div class="split-options">
+            <button type="button" class="split-opt split-add" id="bbSplitCustom" title="自定义分割">+</button>
+          </div>
+        </div>
+      </div>
+    </div><!-- /app-bottombar -->
+    </div><!-- /main-grid -->
+  </div><!-- /app -->
+
+  <script src="nav.js"></script>
+  <script src="i18n.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var api = window.ApexApi;
+    var state = api.state;
+
+    // ── Elements ──
+    var tree = document.getElementById('deviceTree');
+    var treeSearchInput = document.getElementById('treeSearchInput');
+    var apiDeviceInput = document.getElementById('apiDeviceInput');
+    var apiStatusHint = document.getElementById('apiStatusHint');
+    var videoContainer = document.getElementById('videoContainer');
+    var videoPlaceholder = document.getElementById('videoPlaceholder');
+    var statusText = document.getElementById('statusText');
+    var protoSelect = document.getElementById('protoSelect');
+    var osdTime = document.getElementById('osdTime');
+    var osdName = document.getElementById('osdName');
+
+    var playerState = {
+      hls: null,
+      flv: null,
+      easyPlayer: null,
+      lastAddrs: null,
+      lastCam: null,
+      mode: 'live',
+      talkActive: false,
+      talkStream: null,
+      selectedPreset: 1,
+      _autoTried: {},
+    };
+
+    function setStatus(msg) {
+      if (statusText) statusText.textContent = msg;
+      if (apiStatusHint && msg.includes('登录')) apiStatusHint.textContent = msg;
+    }
+
+    // ── OSD clock ──
+    setInterval(function () {
+      if (osdTime) osdTime.textContent = api.nowTs ? new Date().toISOString().replace('T', ' ').slice(0, 19) : '';
+    }, 1000);
+    if (osdTime) osdTime.textContent = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+    // ── Mode switching (via top nav) ──
+    function switchMode(mode) {
+      playerState.mode = mode;
+      document.getElementById('playbackControls').classList.toggle('visible', mode === 'playback');
+      document.getElementById('liveToolbar').style.display = mode === 'live' ? '' : 'none';
+      if (mode === 'playback') {
+        var today = new Date().toISOString().slice(0, 10);
+        document.getElementById('pbDate').value = today;
+      }
+    }
+
+    window.addEventListener('nav-mode-switch', function (e) {
+      switchMode(e.detail.mode);
+    });
+
+    if (location.hash === '#playback') {
+      switchMode('playback');
+    }
+
+    // ── Sidebar tabs ──
+    document.querySelectorAll('[data-stab]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        document.querySelectorAll('[data-stab]').forEach(function (b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+      });
+    });
+
+    // ── Proto select ──
+    protoSelect.value = state.proto || 'HLS';
+    protoSelect.addEventListener('change', function () {
+      api.saveState({ proto: protoSelect.value });
+    });
+
+    // ── Player lifecycle ──
+    function destroyPlayers() {
+      try { playerState.hls && playerState.hls.destroy(); } catch (e) {}
+      try { playerState.flv && playerState.flv.destroy(); } catch (e) {}
+      try { playerState.easyPlayer && playerState.easyPlayer.destroy(); } catch (e) {}
+      try { playerState.easyPlayer && playerState.easyPlayer.close && playerState.easyPlayer.close(); } catch (e) {}
+      playerState.hls = null;
+      playerState.flv = null;
+      playerState.easyPlayer = null;
+    }
+
+    function showPlaceholder() {
+      if (videoPlaceholder) videoPlaceholder.style.display = '';
+      var v = document.getElementById('liveVideoEl');
+      if (v) v.style.display = 'none';
+      destroyPlayers();
+    }
+
+    function hidePlaceholder() {
+      if (videoPlaceholder) videoPlaceholder.style.display = 'none';
+      var v = document.getElementById('liveVideoEl');
+      if (v) v.style.display = '';
+    }
+
+    function getOfficialSdk() {
+      return window.EasyPlayerPro || window['EasyPlayer-pro'] || window.EasyPlayer || null;
+    }
+
+    async function mountPlayer(url, proto) {
+      var v = document.getElementById('liveVideoEl');
+      if (!v) throw new Error('video element missing');
+      v.style.display = '';
+      v.pause();
+      v.removeAttribute('src');
+      v.load();
+
+      if (proto === 'HLS') {
+        if (v.canPlayType('application/vnd.apple.mpegurl')) {
+          v.src = url;
+          await v.play().catch(function () {});
+          return;
+        }
+        if (window.Hls && window.Hls.isSupported()) {
+          var hls = new window.Hls({ enableWorker: true, lowLatencyMode: true, backBufferLength: 30 });
+          playerState.hls = hls;
+          hls.loadSource(url);
+          hls.attachMedia(v);
+          await new Promise(function (resolve, reject) {
+            var done = false;
+            var timer = setTimeout(function () { if (!done) reject(new Error('HLS timeout')); }, 12000);
+            hls.on(window.Hls.Events.MANIFEST_PARSED, function () { if (!done) { done = true; clearTimeout(timer); resolve(); } });
+            hls.on(window.Hls.Events.ERROR, function (_, data) {
+              if (!data || !data.fatal) return;
+              api.logDiag('hls.error: ' + (data.details || data.type));
+              if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) { try { hls.startLoad(); } catch (e) {} return; }
+              if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) { try { hls.recoverMediaError(); } catch (e) {} return; }
+              if (!done) { done = true; clearTimeout(timer); reject(new Error(data.details || 'HLS fatal')); }
+            });
+          });
+          await v.play().catch(function () {});
+          return;
+        }
+        throw new Error('HLS not supported');
+      }
+
+      if (proto === 'FLV') {
+        if (!window.flvjs || !window.flvjs.isSupported()) throw new Error('flv.js not supported');
+        var flv = window.flvjs.createPlayer({ type: 'flv', url: url, isLive: true }, { enableWorker: true, stashInitialSize: 128 });
+        playerState.flv = flv;
+        flv.attachMediaElement(v);
+        flv.on(window.flvjs.Events.ERROR, function (t, d) { api.logDiag('flvjs.error: ' + t + ' ' + d); });
+        flv.load();
+        await v.play().catch(function () {});
+        return;
+      }
+
+      v.src = url;
+      await v.play().catch(function () {});
+    }
+
+    async function playWithEasyPlayerJs(url) {
+      var SDK = window.EasyPlayerPro;
+      if (typeof SDK !== 'function') throw new Error('EasyPlayerPro not loaded');
+      var mount = document.getElementById('sdkMount');
+      mount.innerHTML = '';
+      var v = document.getElementById('liveVideoEl');
+      if (v) v.style.display = 'none';
+      var inst = new SDK(mount, { isLive: true, hasAudio: true, isMute: true, stretch: true, debug: true, gpuDecoder: true, WASM: true, WASMSIMD: true, isFlv: true, decoderWASM: 'EasyPlayer.js/js/EasyPlayer-pro.wasm' });
+      playerState.easyPlayer = inst;
+      await inst.play(url);
+      setStatus('EasyPlayer.js 播放中');
+    }
+
+    // ── Channel tree ──
+    function pickChannelLabel(ch) {
+      return ch.Name || ch.ChannelName || ch.CustomName || ch.DeviceName || ch.ChannelID || ch.ChannelId || '通道';
+    }
+
+    function renderChannelTree(channels) {
+      if (!tree) return;
+      var groups = new Map();
+      (channels || []).forEach(function (ch) {
+        var dev = String(ch.ParentDeviceID || ch.parentDeviceID || ch.DeviceID || ch.deviceID || '').trim();
+        var cid = String(ch.ChannelID || ch.channelID || ch.ChannelId || ch.channelId || '').trim();
+        if (!dev || !cid) return;
+        if (!groups.has(dev)) groups.set(dev, []);
+        groups.get(dev).push({ raw: ch, deviceId: dev, channelId: cid, name: pickChannelLabel(ch) });
+      });
+
+      if (groups.size === 0) {
+        tree.innerHTML = '<li class="tree-item tree-leaf" role="treeitem"><div class="tree-row"><span class="tree-caret placeholder"></span><span class="tree-main"><span class="tree-icon">&#128193;</span><span class="tree-label">未获取到通道</span></span></div></li>';
+        return;
+      }
+
+      var html = '';
+      groups.forEach(function (arr, devId) {
+        var leafHtml = arr.map(function (c) {
+          var safeName = String(c.name).replace(/</g, '&lt;');
+          return '<li class="tree-item tree-leaf" role="treeitem" data-device-id="' + c.deviceId + '" data-channel-id="' + c.channelId + '"><div class="tree-row" data-tree-row><span class="tree-caret placeholder"></span><span class="tree-main"><span class="tree-icon">&#128247;</span><span class="tree-label">' + safeName + '</span></span><span class="tree-right"><button class="tree-fav" type="button" aria-pressed="false" data-tree-fav>&#9734;</button></span></div></li>';
+        }).join('');
+        html += '<li class="tree-item tree-group" role="treeitem" aria-expanded="true" data-device-id="' + devId + '"><div class="tree-row" data-tree-row><button class="tree-caret" type="button" data-tree-toggle></button><span class="tree-main"><span class="tree-icon">&#128193;</span><span class="tree-label">' + devId + '</span></span><span class="tree-right"><span class="tree-count">(' + arr.length + ')</span></span></div><ul class="tree-group-list" role="group">' + leafHtml + '</ul></li>';
+      });
+      tree.innerHTML = html;
+    }
+
+    async function loadChannels() {
+      if (!state.token) {
+        apiStatusHint.innerHTML = '未登录。<a href="base_config.html">去登录</a>';
+        return;
+      }
+      state.deviceId = (apiDeviceInput.value || state.deviceId || '').trim();
+      api.saveState();
+      if (!state.deviceId) { setStatus('请先填写设备ID'); return; }
+      setStatus('加载通道中...');
+      var json = await api.apiGet('/api/v1/channelsconfig', { start: 0, limit: 500, device: state.deviceId }, state.token);
+      var r = api.unwrapEasyDarwin(json);
+      if (!r.ok) throw new Error('获取通道失败：' + r.msg);
+      var chans = r.body.Channels || r.body.channels || r.body.Data || r.body.data || [];
+      renderChannelTree(Array.isArray(chans) ? chans : []);
+      setStatus('通道加载完成：' + (Array.isArray(chans) ? chans.length : 0) + ' 条');
+    }
+
+    async function getStreamAddrs(deviceId, channelId) {
+      var json = await api.apiGet('/api/v1/devices/channelstreamalladdr', { device: deviceId, channel: channelId }, state.token);
+      var r = api.unwrapEasyDarwin(json);
+      if (!r.ok) throw new Error('获取流地址失败：' + r.msg);
+      return r.body || {};
+    }
+
+    function updateChannelInfo(cam) {
+      if (osdName) osdName.textContent = cam.name || cam.channelId || '';
+    }
+
+    async function playCam(deviceId, channelId, name) {
+      destroyPlayers();
+      hidePlaceholder();
+      playerState.lastCam = { deviceId: deviceId, channelId: channelId, name: name };
+      playerState._autoTried = {};
+      setStatus('获取流地址...');
+
+      var addrs = await getStreamAddrs(deviceId, channelId);
+      playerState.lastAddrs = addrs;
+
+      var preferred = protoSelect.value || 'HLS';
+      var url = api.getProtoUrl(addrs, preferred);
+      var proto = preferred;
+      if (!url) {
+        url = api.getProtoUrl(addrs, 'HLS') || api.getProtoUrl(addrs, 'FLV') || '';
+        proto = url.includes('.m3u8') ? 'HLS' : 'FLV';
+      }
+      if (!url) throw new Error('未找到可用播放地址');
+
+      // Check codec via streamInfo
+      var streamData = null;
+      try {
+        var upUrl = api.toUpstreamUrl(url);
+        streamData = await api.apiGet('/api/v1/streamInfo', { url: upUrl, channel: channelId }, state.token);
+        api.logDiag('streamInfo: ' + JSON.stringify(streamData));
+      } catch (e) {
+        api.logDiag('streamInfo failed: ' + (e.message || e));
+      }
+
+      updateChannelInfo({ deviceId: deviceId, channelId: channelId, name: name });
+
+      var vc = String((streamData && streamData.video_codec) || '').toUpperCase();
+      if (vc.includes('265') || vc.includes('HEVC')) {
+        var overlay = document.getElementById('codecOverlay');
+        if (overlay) {
+          overlay.style.display = 'flex';
+          overlay.textContent = '检测到 H265/HEVC 编码，浏览器原生播放器无法解码。\n\n正在尝试 EasyPlayer.js 解码...';
+        }
+        try {
+          await playWithEasyPlayerJs(url);
+          setStatus('EasyPlayer.js H265 播放中');
+          if (overlay) overlay.style.display = 'none';
+          return;
+        } catch (e) {
+          api.logDiag('EasyPlayer.js H265 failed: ' + (e.message || e));
+          if (overlay) overlay.textContent = 'H265 解码失败：' + (e.message || e) + '\n\n建议在平台侧将码流改为 H264。';
+          setStatus('H265 解码失败');
+          return;
+        }
+      }
+
+      await mountPlayer(url, proto);
+      setStatus('播放中（' + proto + '）');
+
+      // Health check after 3.5s
+      var ck = playerState._autoTried;
+      ck[proto] = true;
+      setTimeout(async function () {
+        var v = document.getElementById('liveVideoEl');
+        if (!v || !v.videoWidth) {
+          var other = proto === 'HLS' ? 'FLV' : 'HLS';
+          if (ck[other]) return;
+          var nextUrl = api.getProtoUrl(addrs, other);
+          if (!nextUrl) return;
+          ck[other] = true;
+          api.logDiag('healthcheck: switching to ' + other);
+          destroyPlayers();
+          try {
+            await mountPlayer(nextUrl, other);
+            protoSelect.value = other;
+            api.saveState({ proto: other });
+            setStatus('切换至 ' + other + ' 播放');
+          } catch (e) {
+            api.logDiag('healthcheck switch failed: ' + (e.message || e));
+          }
+        }
+      }, 3500);
+    }
+
+    // ── Tree interaction ──
+    function setSelectedRow(row) {
+      tree.querySelectorAll('.tree-row.selected').forEach(function (r) { r.classList.remove('selected'); });
+      row.classList.add('selected');
+    }
+
+    tree.addEventListener('click', function (e) {
+      var target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+
+      var favBtn = target.closest('[data-tree-fav]');
+      if (favBtn) {
+        var pressed = favBtn.getAttribute('aria-pressed') === 'true';
+        favBtn.setAttribute('aria-pressed', String(!pressed));
+        favBtn.textContent = !pressed ? '\u2605' : '\u2606';
+        e.stopPropagation();
+        return;
+      }
+
+      var toggleBtn = target.closest('[data-tree-toggle]');
+      if (toggleBtn) {
+        var li = toggleBtn.closest('.tree-group');
+        if (li) {
+          var expanded = li.getAttribute('aria-expanded') === 'true';
+          li.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+        }
+        e.stopPropagation();
+        return;
+      }
+
+      var row = target.closest('[data-tree-row]');
+      if (row) {
+        setSelectedRow(row);
+        var li = row.closest('.tree-item');
+        if (li && li.classList.contains('tree-leaf')) {
+          var deviceId = li.getAttribute('data-device-id');
+          var channelId = li.getAttribute('data-channel-id');
+          var labelEl = li.querySelector('.tree-label');
+          var name = labelEl ? labelEl.textContent.trim() : channelId;
+
+          if (state.token && deviceId && channelId) {
+            playCam(deviceId, channelId, name).catch(function (err) {
+              setStatus('播放失败：' + (err.message || err));
+            });
+          } else {
+            updateChannelInfo({ deviceId: deviceId, channelId: channelId, name: name });
+            setStatus('未登录或无通道信息');
+          }
+        }
+      }
+    });
+
+    // ── Search ──
+    function filterTree(query) {
+      var q = (query || '').trim().toLowerCase();
+      tree.querySelectorAll('.tree-item').forEach(function (li) {
+        var label = li.querySelector('.tree-label');
+        var text = (label ? label.textContent : '').toLowerCase();
+        if (!q) { li.style.display = ''; return; }
+        if (li.classList.contains('tree-group')) {
+          var hasMatch = false;
+          li.querySelectorAll('.tree-leaf').forEach(function (leaf) {
+            var lt = (leaf.querySelector('.tree-label') || {}).textContent || '';
+            var match = lt.toLowerCase().includes(q);
+            leaf.style.display = match ? '' : 'none';
+            if (match) hasMatch = true;
+          });
+          li.style.display = (text.includes(q) || hasMatch) ? '' : 'none';
+          if (hasMatch) li.setAttribute('aria-expanded', 'true');
+        } else {
+          li.style.display = text.includes(q) ? '' : 'none';
+        }
+      });
+    }
+
+    treeSearchInput.addEventListener('input', function () { filterTree(treeSearchInput.value); });
+    document.getElementById('treeSearchBtn').addEventListener('click', function () { filterTree(treeSearchInput.value); });
+
+    // ── Toolbar buttons ──
+    document.getElementById('btnPlay').addEventListener('click', function () {
+      var cam = playerState.lastCam;
+      if (cam) playCam(cam.deviceId, cam.channelId, cam.name).catch(function (e) { setStatus('播放失败：' + e.message); });
+    });
+
+    document.getElementById('btnPause').addEventListener('click', function () {
+      var v = document.getElementById('liveVideoEl');
+      if (v) v.pause();
+    });
+
+    document.getElementById('btnSnapshot').addEventListener('click', function () {
+      var v = document.getElementById('liveVideoEl');
+      if (!v || !v.videoWidth) { setStatus('无法抓拍：无视频帧'); return; }
+      var c = document.createElement('canvas');
+      c.width = v.videoWidth; c.height = v.videoHeight;
+      var ctx = c.getContext('2d');
+      ctx.drawImage(v, 0, 0);
+      var a = document.createElement('a');
+      a.href = c.toDataURL('image/png');
+      a.download = 'snapshot_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.png';
+      a.click();
+      setStatus('抓拍已保存');
+    });
+
+    document.getElementById('btnFullscreen').addEventListener('click', function () {
+      var el = videoContainer;
+      if (el.requestFullscreen) el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    });
+
+    // ── PTZ ──
+    var ptzSection = document.getElementById('ptzSection');
+    var ptzSpeedSlider = document.getElementById('ptzSpeedSlider');
+
+    document.getElementById('ptzToggleHeader').addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (ptzSection) ptzSection.classList.toggle('collapsed');
+    });
+
+    document.getElementById('ptzMoreToggle').addEventListener('click', function () {
+      var panel = document.getElementById('ptzMorePanel');
+      var row = document.getElementById('ptzMoreToggle');
+      var visible = panel.classList.toggle('visible');
+      row.classList.toggle('expanded', visible);
+      row.querySelector('span:first-child').textContent = visible ? '收起' : '更多功能';
+    });
+
+    function getPtzSpeed() {
+      return ptzSpeedSlider ? parseInt(ptzSpeedSlider.value) : 50;
+    }
+
+    async function sendPtzCommand(command) {
+      var cam = playerState.lastCam;
+      if (!cam || !state.token) { setStatus('PTZ：请先选择通道并登录'); return; }
+      try {
+        var params = { device: cam.deviceId, channel: cam.channelId, command: command, speed: getPtzSpeed() };
+        await api.apiGet('/api/v1/ptz/control', params, state.token);
+        api.logDiag('PTZ: ' + command + ' speed=' + params.speed);
+      } catch (e) {
+        api.logDiag('PTZ failed: ' + (e.message || e));
+        setStatus('PTZ失败：' + (e.message || e));
+      }
+    }
+
+    async function sendPtzStop() {
+      var cam = playerState.lastCam;
+      if (!cam || !state.token) return;
+      try {
+        await api.apiGet('/api/v1/ptz/control', { device: cam.deviceId, channel: cam.channelId, command: 'stop' }, state.token);
+      } catch (e) {}
+    }
+
+    // Direction buttons (mousedown=move, mouseup=stop)
+    document.querySelectorAll('[data-ptz]').forEach(function (btn) {
+      var cmd = btn.getAttribute('data-ptz');
+      btn.addEventListener('mousedown', function () { sendPtzCommand(cmd); });
+      btn.addEventListener('mouseup', sendPtzStop);
+      btn.addEventListener('mouseleave', sendPtzStop);
+      btn.addEventListener('touchstart', function (e) { e.preventDefault(); sendPtzCommand(cmd); });
+      btn.addEventListener('touchend', sendPtzStop);
+    });
+
+    // Function buttons (click to toggle)
+    document.querySelectorAll('[data-fn]').forEach(function (btn) {
+      var fn = btn.getAttribute('data-fn');
+      btn.addEventListener('click', function () {
+        var wasActive = btn.classList.contains('active');
+        document.querySelectorAll('[data-fn]').forEach(function (b) { b.classList.remove('active'); });
+        if (wasActive) {
+          sendPtzStop();
+        } else {
+          btn.classList.add('active');
+          sendPtzCommand(fn);
+        }
+      });
+    });
+
+    // ── Recording Playback ──
+    document.getElementById('btnQueryRecords').addEventListener('click', async function () {
+      var cam = playerState.lastCam;
+      if (!cam || !state.token) { setStatus('请先选择通道并登录'); return; }
+      var date = document.getElementById('pbDate').value;
+      var startTime = document.getElementById('pbStartTime').value;
+      var endTime = document.getElementById('pbEndTime').value;
+      if (!date) { setStatus('请选择日期'); return; }
+
+      setStatus('查询录像...');
+      try {
+        var params = {
+          device: cam.deviceId,
+          channel: cam.channelId,
+          starttime: date + ' ' + (startTime || '00:00:00'),
+          endtime: date + ' ' + (endTime || '23:59:59'),
+        };
+        var json = await api.apiGet('/api/v1/playback/recordlist', params, state.token);
+        var r = api.unwrapEasyDarwin(json);
+        var records = r.body.RecordList || r.body.recordList || r.body.Data || r.body.data || [];
+        var listEl = document.getElementById('pbRecordList');
+        if (!records.length) {
+          listEl.textContent = '未查询到录像记录';
+          setStatus('未查询到录像');
+          return;
+        }
+        listEl.innerHTML = records.map(function (rec, i) {
+          var start = rec.StartTime || rec.startTime || rec.start || '';
+          var end = rec.EndTime || rec.endTime || rec.end || '';
+          return '<div style="padding:2px 0;cursor:pointer;" data-rec-idx="' + i + '">录像 ' + (i + 1) + '：' + start + ' ~ ' + end + '</div>';
+        }).join('');
+        setStatus('查询到 ' + records.length + ' 条录像');
+        listEl._records = records;
+      } catch (e) {
+        setStatus('查询录像失败：' + (e.message || e));
+      }
+    });
+
+    document.getElementById('pbRecordList').addEventListener('click', function (e) {
+      var el = e.target.closest('[data-rec-idx]');
+      if (!el) return;
+      var idx = parseInt(el.getAttribute('data-rec-idx'));
+      var records = document.getElementById('pbRecordList')._records;
+      if (!records || !records[idx]) return;
+      startPlaybackFromRecord(records[idx]);
+    });
+
+    async function startPlaybackFromRecord(rec) {
+      var cam = playerState.lastCam;
+      if (!cam || !state.token) return;
+      setStatus('开始回放...');
+      try {
+        var params = {
+          device: cam.deviceId,
+          channel: cam.channelId,
+          starttime: rec.StartTime || rec.startTime || rec.start || '',
+          endtime: rec.EndTime || rec.endTime || rec.end || '',
+        };
+        var json = await api.apiGet('/api/v1/playback/start', params, state.token);
+        var r = api.unwrapEasyDarwin(json);
+        var url = r.body.HLS || r.body.hls || r.body.FLV || r.body.flv || r.body.URL || r.body.url || '';
+        if (!url) throw new Error('回放流地址为空');
+        url = api.joinUrl(state.baseUrl, url);
+        destroyPlayers();
+        hidePlaceholder();
+        var proto = url.includes('.m3u8') ? 'HLS' : 'FLV';
+        await mountPlayer(url, proto);
+        setStatus('回放中（' + proto + '）');
+      } catch (e) {
+        setStatus('回放失败：' + (e.message || e));
+      }
+    }
+
+    document.getElementById('btnStartPlayback').addEventListener('click', function () {
+      var cam = playerState.lastCam;
+      if (!cam) { setStatus('请先选择通道'); return; }
+      var date = document.getElementById('pbDate').value;
+      var startTime = document.getElementById('pbStartTime').value || '00:00:00';
+      var endTime = document.getElementById('pbEndTime').value || '23:59:59';
+      if (!date) { setStatus('请选择日期'); return; }
+      startPlaybackFromRecord({
+        StartTime: date + ' ' + startTime,
+        EndTime: date + ' ' + endTime,
+      });
+    });
+
+    document.getElementById('btnStopPlayback').addEventListener('click', function () {
+      var cam = playerState.lastCam;
+      if (!cam || !state.token) return;
+      destroyPlayers();
+      showPlaceholder();
+      setStatus('回放已停止');
+      api.apiGet('/api/v1/playback/stop', { device: cam.deviceId, channel: cam.channelId }, state.token).catch(function () {});
+    });
+
+    // ── Intercom / Talk ──
+    document.getElementById('btnTalk').addEventListener('click', async function () {
+      var btn = document.getElementById('btnTalk');
+      var cam = playerState.lastCam;
+      if (!cam || !state.token) { setStatus('请先选择通道并登录'); return; }
+
+      if (playerState.talkActive) {
+        stopTalk();
+        return;
+      }
+
+      try {
+        var stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        playerState.talkStream = stream;
+
+        var params = { device: cam.deviceId, channel: cam.channelId };
+        var json = await api.apiGet('/api/v1/talk/start', params, state.token);
+        var r = api.unwrapEasyDarwin(json);
+        if (!r.ok) throw new Error(r.msg || '对讲开启失败');
+
+        var talkUrl = r.body.URL || r.body.url || r.body.WS || r.body.ws || '';
+        if (talkUrl) {
+          api.logDiag('talk started, url=' + talkUrl);
+        }
+
+        playerState.talkActive = true;
+        btn.classList.add('active');
+        btn.innerHTML = '&#128308; 对讲中';
+        setStatus('对讲已开启');
+      } catch (e) {
+        api.logDiag('talk failed: ' + (e.message || e));
+        setStatus('对讲失败：' + (e.message || e));
+      }
+    });
+
+    function stopTalk() {
+      var btn = document.getElementById('btnTalk');
+      var cam = playerState.lastCam;
+      if (playerState.talkStream) {
+        playerState.talkStream.getTracks().forEach(function (t) { t.stop(); });
+        playerState.talkStream = null;
+      }
+      playerState.talkActive = false;
+      btn.classList.remove('active');
+      btn.innerHTML = '&#127908; 对讲';
+      setStatus('对讲已停止');
+
+      if (cam && state.token) {
+        api.apiGet('/api/v1/talk/stop', { device: cam.deviceId, channel: cam.channelId }, state.token).catch(function () {});
+      }
+    }
+
+    // ── Bottom toolbar (HIKIOT) ──
+    var splitPopup = document.getElementById('splitPopup');
+    var bbSplitBtn = document.getElementById('bbSplit');
+
+    bbSplitBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      splitPopup.classList.toggle('visible');
+    });
+
+    document.addEventListener('click', function (e) {
+      if (splitPopup.classList.contains('visible') && !splitPopup.contains(e.target) && e.target !== bbSplitBtn) {
+        splitPopup.classList.remove('visible');
+      }
+    });
+
+    splitPopup.addEventListener('click', function (e) {
+      var opt = e.target.closest('[data-split]');
+      if (!opt) return;
+      splitPopup.querySelectorAll('.split-opt').forEach(function (b) { b.classList.remove('active'); });
+      opt.classList.add('active');
+      var layout = opt.getAttribute('data-split');
+      api.logDiag('split layout selected: ' + layout);
+      splitPopup.classList.remove('visible');
+    });
+
+    document.getElementById('bbFullscreen').addEventListener('click', function () {
+      var el = videoContainer;
+      if (el.requestFullscreen) el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    });
+
+    document.getElementById('bbStopPreview').addEventListener('click', function () {
+      destroyPlayers();
+      showPlaceholder();
+      setStatus('预览已停止');
+    });
+
+    document.getElementById('bbConfig').addEventListener('click', function () {
+      window.location.href = 'base_config.html';
+    });
+
+    // ── Load channels button ──
+    document.getElementById('btnLoadChannels').addEventListener('click', function () {
+      loadChannels().catch(function (e) { setStatus('加载失败：' + (e.message || e)); });
+    });
+
+    // ── Demo data ──
+    var DEMO_CHANNELS = [
+      { ParentDeviceID: 'NVR-01', ChannelID: 'ch-001', Name: '大楼正门' },
+      { ParentDeviceID: 'NVR-01', ChannelID: 'ch-002', Name: '地下车库 B1' },
+      { ParentDeviceID: 'NVR-01', ChannelID: 'ch-003', Name: '电梯轿厢 #1' },
+      { ParentDeviceID: 'NVR-01', ChannelID: 'ch-004', Name: '办公区走廊 3F' },
+      { ParentDeviceID: 'NVR-02', ChannelID: 'ch-005', Name: '园区东门' },
+      { ParentDeviceID: 'NVR-02', ChannelID: 'ch-006', Name: '园区西门' },
+      { ParentDeviceID: 'NVR-02', ChannelID: 'ch-007', Name: '停车场出口' },
+      { ParentDeviceID: 'NVR-03', ChannelID: 'ch-008', Name: '仓库 A 区' },
+      { ParentDeviceID: 'NVR-03', ChannelID: 'ch-009', Name: '仓库 B 区' },
+      { ParentDeviceID: 'NVR-03', ChannelID: 'ch-010', Name: '消防通道' },
+      { ParentDeviceID: 'NVR-03', ChannelID: 'ch-011', Name: '屋顶天台' },
+      { ParentDeviceID: 'NVR-03', ChannelID: 'ch-012', Name: '配电房' },
+    ];
+
+    // ── Init ──
+    api.loadState();
+    if (apiDeviceInput) apiDeviceInput.value = state.deviceId || '';
+    protoSelect.value = state.proto || 'HLS';
+
+    if (state.token) {
+      apiStatusHint.textContent = '已登录（' + (state.username || '—') + '）';
+      renderChannelTree([]);
+    } else {
+      renderChannelTree(DEMO_CHANNELS);
+      apiStatusHint.innerHTML = '未登录。<a href="base_config.html">去登录</a>';
+    }
+
+    api.logDiag('index.html init: origin=' + location.origin);
+  })();
+  </script>
+</body>
+</html>

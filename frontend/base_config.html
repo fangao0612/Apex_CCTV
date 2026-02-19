@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: http:; connect-src 'self' https: http: ws: wss:; media-src 'self' blob: https: http:; img-src 'self' data: blob: https: http:; frame-src 'self' https:; child-src 'self'; manifest-src 'self'; worker-src 'self' blob:;">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>基础配置 - Apex CCTV</title>
+  <link rel="stylesheet" href="styles/common.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.19.0/js/md5.min.js"></script>
+  <script src="api.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar" role="banner">
+      <div class="top-left"><strong>Apex CCTV</strong></div>
+      <div class="top-right"><span>管理员</span></div>
+    </header>
+
+    <div class="main">
+      <div class="breadcrumb">
+        <strong>配置</strong>
+        <span style="color:#999;">|</span>
+        <span>基础配置</span>
+      </div>
+
+      <section class="page">
+        <div class="card" style="max-width:560px;">
+          <div class="card-hd">平台连接</div>
+          <div class="card-bd">
+            <div class="form-row">
+              <label for="cfgBaseUrl">Base URL</label>
+              <input id="cfgBaseUrl" value="http://13.238.254.66:18000" spellcheck="false">
+            </div>
+            <div class="form-row">
+              <label for="cfgUsername">用户名</label>
+              <input id="cfgUsername" placeholder="例如：easycvr" autocomplete="username">
+            </div>
+            <div class="form-row">
+              <label for="cfgPassword">密码</label>
+              <input id="cfgPassword" type="password" placeholder="登录密码（md5 提交）" autocomplete="current-password">
+            </div>
+            <div class="btn-row">
+              <button type="button" id="btnLogin" class="btn btn-primary">登录获取 Token</button>
+              <button type="button" id="btnLogout" class="btn">退出登录</button>
+              <button type="button" id="btnSave" class="btn">仅保存配置</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="status-box" id="statusBox" style="max-width:560px;">
+          状态：未登录。
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="nav.js"></script>
+  <script src="i18n.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var api = window.ApexApi;
+    var state = api.state;
+
+    var cfgBaseUrl = document.getElementById('cfgBaseUrl');
+    var cfgUsername = document.getElementById('cfgUsername');
+    var cfgPassword = document.getElementById('cfgPassword');
+    var statusBox = document.getElementById('statusBox');
+
+    function setStatus(msg) { if (statusBox) statusBox.textContent = msg; }
+
+    function initForm() {
+      api.loadState();
+      if (state.baseUrl) cfgBaseUrl.value = state.baseUrl;
+      if (state.username) cfgUsername.value = state.username;
+      if (state.token) {
+        setStatus('状态：已登录（' + (state.username || '—') + '）。Token 已保存。');
+      } else {
+        setStatus('状态：未登录。请输入账号密码后登录。');
+      }
+    }
+
+    document.getElementById('btnSave').addEventListener('click', function () {
+      var base = api.normalizeUrl(cfgBaseUrl.value);
+      api.saveState({ baseUrl: base, username: cfgUsername.value.trim() });
+      cfgBaseUrl.value = base;
+      setStatus('配置已保存。Base URL = ' + base);
+    });
+
+    document.getElementById('btnLogin').addEventListener('click', async function () {
+      var base = api.normalizeUrl(cfgBaseUrl.value);
+      var username = cfgUsername.value.trim();
+      var pass = cfgPassword.value;
+      if (!username || !pass) { setStatus('请输入用户名和密码。'); return; }
+      if (typeof window.md5 !== 'function') { setStatus('md5 库未加载。'); return; }
+      var passMd5 = String(window.md5(pass)).toLowerCase();
+
+      setStatus('登录中...');
+      try {
+        var url = base + '/api/v1/login?username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(passMd5);
+        var res = await fetch(url);
+        var text = await res.text();
+        var json = null;
+        try { json = JSON.parse(text); } catch (e) {}
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+
+        var r = api.unwrapEasyDarwin(json);
+        if (!r.ok) throw new Error(r.msg || '登录失败');
+        var token = r.body.Token || r.body.token || '';
+        if (!token) throw new Error('未返回 Token');
+
+        api.saveState({ baseUrl: base, upstreamUrl: base, username: username, token: token, proto: 'HLS' });
+        cfgPassword.value = '';
+        setStatus('登录成功（' + username + '）。Token 已保存，可前往实时预览页使用。');
+      } catch (e) {
+        setStatus('登录失败：' + (e.message || e));
+      }
+    });
+
+    document.getElementById('btnLogout').addEventListener('click', function () {
+      api.saveState({ token: '' });
+      setStatus('已退出（Token 已清除）。');
+    });
+
+    initForm();
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https: http:; connect-src 'self' https: http: ws: wss:; media-src 'self' blob: https: http:; img-src 'self' data: blob: https: http:; frame-src 'self' https:; child-src 'self'; manifest-src 'self'; worker-src 'self' blob:;">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>设备管理 - Apex CCTV</title>
+  <link rel="stylesheet" href="styles/common.css">
+  <script src="api.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar" role="banner">
+      <div class="top-left"><strong>Apex CCTV</strong></div>
+      <div class="top-right"><span>管理员</span></div>
+    </header>
+
+    <div class="main">
+      <div class="breadcrumb">
+        <strong>设备管理</strong>
+        <span style="color:#999;">|</span>
+        <span>设备</span>
+      </div>
+
+      <section class="page">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <button type="button" id="btnAdd" class="btn btn-primary" style="font-size:12px;">+ 添加设备</button>
+            <button type="button" id="btnRefresh" class="btn" style="font-size:12px;">刷新</button>
+            <label style="font-size:12px;">
+              <select id="filterProtocol" style="font-size:12px;">
+                <option value="">全部协议</option>
+                <option value="GB/T28181">GB/T28181</option>
+                <option value="EHOME">EHOME</option>
+                <option value="TCP">TCP</option>
+              </select>
+            </label>
+            <label style="font-size:12px;">
+              <select id="filterStatus" style="font-size:12px;">
+                <option value="">全部状态</option>
+                <option value="在线">在线</option>
+                <option value="离线">离线</option>
+              </select>
+            </label>
+            <button type="button" id="btnExport" class="btn" style="font-size:12px;">导出</button>
+          </div>
+          <div class="toolbar-right">
+            <input id="keyword" placeholder="设备名 / 编码" style="font-size:12px;">
+            <button type="button" id="btnSearch" class="btn" style="font-size:12px;">搜</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:72px;">编号</th>
+                <th style="width:160px;">名称</th>
+                <th style="width:220px;">设备编码</th>
+                <th style="width:120px;">接入协议</th>
+                <th style="width:80px;">状态</th>
+                <th style="width:60px;">通道</th>
+                <th style="width:80px;">启用</th>
+                <th style="width:180px;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="pager">
+          <div class="left">
+            <span id="countText">共 0 条</span>
+            <label style="font-size:12px;">
+              每页
+              <select id="pageSize" style="font-size:12px;">
+                <option value="10" selected>10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+              </select>
+              条
+            </label>
+          </div>
+          <div class="right">
+            <button type="button" id="btnPrev" class="btn" style="font-size:12px;">上一页</button>
+            <span id="pageText">第 1 / 1 页</span>
+            <button type="button" id="btnNext" class="btn" style="font-size:12px;">下一页</button>
+          </div>
+        </div>
+
+        <div id="apiStatus" class="status-box" style="margin-top:16px;font-size:12px;color:#666;"></div>
+      </section>
+    </div>
+  </div>
+
+  <dialog id="dlg">
+    <div class="dlg-hd">
+      <strong id="dlgTitle">添加设备</strong>
+      <button type="button" id="btnCloseDlg" style="font-size:18px;">&times;</button>
+    </div>
+    <div class="dlg-bd">
+      <form id="formDevice">
+        <div class="form-grid">
+          <label for="fName">名称</label>
+          <input id="fName" required placeholder="例如：大华枪机">
+          <label for="fCode">设备编码</label>
+          <input id="fCode" required placeholder="例如：34020000001320000001">
+          <label for="fAccess">接入协议</label>
+          <select id="fAccess" required>
+            <option value="GB/T28181">GB/T28181</option>
+            <option value="EHOME">EHOME</option>
+            <option value="TCP">TCP</option>
+          </select>
+          <label for="fStatus">状态</label>
+          <select id="fStatus" required>
+            <option value="在线">在线</option>
+            <option value="离线">离线</option>
+          </select>
+          <label for="fChannels">通道数</label>
+          <input id="fChannels" type="number" min="0" value="1" required>
+          <label for="fEnabled">启用</label>
+          <input id="fEnabled" type="checkbox" checked style="width:auto;">
+        </div>
+      </form>
+    </div>
+    <div class="dlg-ft">
+      <button type="button" id="btnCancel" class="btn">取消</button>
+      <button type="button" id="btnSave" class="btn btn-primary">保存</button>
+    </div>
+  </dialog>
+
+  <script src="nav.js"></script>
+  <script src="i18n.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var api = window.ApexApi;
+    var state = api.state;
+    var useApi = false;
+
+    var devices = [];
+    var page = 1, pageSize = 10;
+    var editingId = null;
+
+    var tbody = document.getElementById('tbody');
+    var countText = document.getElementById('countText');
+    var pageText = document.getElementById('pageText');
+    var apiStatusEl = document.getElementById('apiStatus');
+
+    function setApiStatus(msg) { if (apiStatusEl) apiStatusEl.textContent = msg; }
+    function esc(s) { return String(s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    async function fetchDevices() {
+      if (!state.token) {
+        setApiStatus('未登录，显示模拟数据。');
+        useApi = false;
+        devices = [
+          { id: 8,  name: '大华枪机',   code: '34020000001330000001', access: 'GB/T28181', status: '在线', channels: 1, enabled: true },
+          { id: 22, name: '澳洲测试',   code: '34020000001320000001', access: 'GB/T28181', status: '在线', channels: 2, enabled: true },
+          { id: 24, name: '临沂3Q测试', code: '34020000001320000002', access: 'GB/T28181', status: '在线', channels: 2, enabled: true },
+          { id: 26, name: '安焦',       code: '34020000001320000003', access: 'GB/T28181', status: '离线', channels: 2, enabled: false },
+          { id: 27, name: '安焦@home',  code: 'GN3381581',          access: 'EHOME',     status: '离线', channels: 2, enabled: true },
+        ];
+        render();
+        return;
+      }
+
+      try {
+        var json = await api.apiGet('/api/v1/devices', { start: 0, limit: 500 }, state.token);
+        var r = api.unwrapEasyDarwin(json);
+        if (r.ok) {
+          var list = r.body.Devices || r.body.devices || r.body.Data || r.body.data || [];
+          if (Array.isArray(list) && list.length > 0) {
+            useApi = true;
+            devices = list.map(function (d, i) {
+              return {
+                id: d.ID || d.id || (i + 1),
+                name: d.Name || d.name || d.DeviceName || '',
+                code: d.Serial || d.serial || d.DeviceID || d.deviceID || '',
+                access: d.AccessProtocol || d.accessProtocol || d.Protocol || d.protocol || 'GB/T28181',
+                status: (d.Online || d.online || d.Status === 'ON' || d.status === 'online') ? '在线' : '离线',
+                channels: d.ChannelCount || d.channelCount || d.Channels || d.channels || 0,
+                enabled: d.Enabled !== false && d.enabled !== false,
+              };
+            });
+            setApiStatus('已从后端加载 ' + devices.length + ' 台设备。');
+            render();
+            return;
+          }
+        }
+      } catch (e) {
+        setApiStatus('API请求失败（' + (e.message || e) + '），使用模拟数据。');
+      }
+
+      useApi = false;
+      devices = [
+        { id: 8, name: '大华枪机', code: '34020000001330000001', access: 'GB/T28181', status: '在线', channels: 1, enabled: true },
+        { id: 22, name: '澳洲测试', code: '34020000001320000001', access: 'GB/T28181', status: '在线', channels: 2, enabled: true },
+      ];
+      render();
+    }
+
+    function getFiltered() {
+      var kw = (document.getElementById('keyword').value || '').trim().toLowerCase();
+      var proto = document.getElementById('filterProtocol').value;
+      var st = document.getElementById('filterStatus').value;
+      return devices.filter(function (d) {
+        var kwOk = !kw || (d.name || '').toLowerCase().includes(kw) || (d.code || '').toLowerCase().includes(kw);
+        var pOk = !proto || d.access === proto;
+        var sOk = !st || d.status === st;
+        return kwOk && pOk && sOk;
+      });
+    }
+
+    function render() {
+      var filtered = getFiltered();
+      var total = filtered.length;
+      var totalPages = Math.max(1, Math.ceil(total / pageSize));
+      if (page > totalPages) page = totalPages;
+      if (page < 1) page = 1;
+      var start = (page - 1) * pageSize;
+      var rows = filtered.slice(start, start + pageSize);
+
+      countText.textContent = '共 ' + total + ' 条';
+      pageText.textContent = '第 ' + page + ' / ' + totalPages + ' 页';
+      document.getElementById('btnPrev').disabled = page <= 1;
+      document.getElementById('btnNext').disabled = page >= totalPages;
+
+      tbody.innerHTML = rows.map(function (d) {
+        var sc = d.status === '在线' ? 'status-online' : 'status-offline';
+        return '<tr data-id="' + d.id + '"><td>' + d.id + '</td><td>' + esc(d.name) + '</td><td style="font-size:12px;font-family:monospace;">' + esc(d.code) + '</td><td>' + esc(d.access) + '</td><td class="' + sc + '">' + d.status + '</td><td>' + d.channels + '</td><td><input type="checkbox" data-act="toggle" ' + (d.enabled ? 'checked' : '') + '></td><td><div class="ops"><button data-act="edit">编辑</button><button data-act="delete" class="danger">删除</button></div></td></tr>';
+      }).join('');
+    }
+
+    document.getElementById('btnPrev').addEventListener('click', function () { page--; render(); });
+    document.getElementById('btnNext').addEventListener('click', function () { page++; render(); });
+    document.getElementById('pageSize').addEventListener('change', function () { pageSize = Number(this.value) || 10; page = 1; render(); });
+    document.getElementById('btnSearch').addEventListener('click', function () { page = 1; render(); });
+    document.getElementById('keyword').addEventListener('keydown', function (e) { if (e.key === 'Enter') { page = 1; render(); } });
+    document.getElementById('filterProtocol').addEventListener('change', function () { page = 1; render(); });
+    document.getElementById('filterStatus').addEventListener('change', function () { page = 1; render(); });
+    document.getElementById('btnRefresh').addEventListener('click', fetchDevices);
+
+    document.getElementById('btnExport').addEventListener('click', function () {
+      var filtered = getFiltered();
+      var headers = ['id','name','code','access','status','channels','enabled'];
+      var lines = [headers.join(',')].concat(filtered.map(function (d) {
+        return headers.map(function (k) { return '"' + String(d[k] || '').replace(/"/g, '""') + '"'; }).join(',');
+      }));
+      var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'devices_' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.click();
+    });
+
+    tbody.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-act]');
+      if (!btn) return;
+      var tr = btn.closest('tr');
+      var id = Number(tr.getAttribute('data-id'));
+      var d = devices.find(function (x) { return x.id === id; });
+      if (!d) return;
+      var act = btn.getAttribute('data-act');
+
+      if (act === 'delete') {
+        if (!confirm('确定删除「' + d.name + '」？')) return;
+        if (useApi && state.token) {
+          api.apiGet('/api/v1/devices/delete', { id: d.id }, state.token).catch(function () {});
+        }
+        devices = devices.filter(function (x) { return x.id !== id; });
+        render();
+      }
+      if (act === 'edit') openDialog('edit', d);
+    });
+
+    tbody.addEventListener('change', function (e) {
+      if (e.target.getAttribute('data-act') !== 'toggle') return;
+      var tr = e.target.closest('tr');
+      var id = Number(tr.getAttribute('data-id'));
+      var d = devices.find(function (x) { return x.id === id; });
+      if (d) d.enabled = e.target.checked;
+    });
+
+    var dlg = document.getElementById('dlg');
+    function openDialog(mode, d) {
+      editingId = mode === 'edit' ? d.id : null;
+      document.getElementById('dlgTitle').textContent = mode === 'edit' ? '编辑设备' : '添加设备';
+      document.getElementById('fName').value = mode === 'edit' ? d.name : '';
+      document.getElementById('fCode').value = mode === 'edit' ? d.code : '';
+      document.getElementById('fAccess').value = mode === 'edit' ? d.access : 'GB/T28181';
+      document.getElementById('fStatus').value = mode === 'edit' ? d.status : '在线';
+      document.getElementById('fChannels').value = mode === 'edit' ? d.channels : 1;
+      document.getElementById('fEnabled').checked = mode === 'edit' ? d.enabled : true;
+      dlg.showModal();
+    }
+
+    function closeDialog() { dlg.close(); }
+    document.getElementById('btnAdd').addEventListener('click', function () { openDialog('add'); });
+    document.getElementById('btnCloseDlg').addEventListener('click', closeDialog);
+    document.getElementById('btnCancel').addEventListener('click', closeDialog);
+
+    document.getElementById('btnSave').addEventListener('click', function () {
+      if (!document.getElementById('formDevice').reportValidity()) return;
+      var payload = {
+        name: document.getElementById('fName').value.trim(),
+        code: document.getElementById('fCode').value.trim(),
+        access: document.getElementById('fAccess').value,
+        status: document.getElementById('fStatus').value,
+        channels: Number(document.getElementById('fChannels').value) || 1,
+        enabled: document.getElementById('fEnabled').checked,
+      };
+      if (editingId != null) {
+        var d = devices.find(function (x) { return x.id === editingId; });
+        if (d) Object.assign(d, payload);
+      } else {
+        var nextId = Math.max(0, ...devices.map(function (d) { return d.id; })) + 1;
+        devices.unshift(Object.assign({ id: nextId }, payload));
+      }
+      closeDialog();
+      render();
+    });
+
+    api.loadState();
+    fetchDevices();
+  })();
+  </script>
+</body>
+</html>

@@ -1,39 +1,56 @@
 import http.client
 import os
+import pathlib
 import sys
 import urllib.parse
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
-
-# 用途：
-# - 解决你用 file:// 打开 admin_panel.html 时的 CORS 跨域问题
-# - 在本地启动一个静态文件服务器，同时把 /api /hls /flv /rtc 等路径反向代理到 EasyCVR 平台
+# ────────────────────────────────────────────────────────────────
+# Apex CCTV — 反向代理 + 静态文件服务器
 #
-# 用法：
-#   python proxy_server.py
-#   python proxy_server.py 9000
-# 然后浏览器打开：
-#   http://127.0.0.1:<port>/admin_panel.html
+# 部署模式:
+#   1. Railway (生产): 只做反向代理, 前端由 Vercel 托管
+#   2. 本地开发: 反向代理 + 提供 ../frontend/ 静态文件
 #
-# 默认上游：
-#   http://13.238.254.66:18000
+# 环境变量:
+#   EASYCVR_UPSTREAM  — 上游 EasyCVR 地址 (默认 http://13.238.254.66:18000)
+#   PORT              — 监听端口 (Railway 自动注入, 默认 8000)
+#   HOST              — 监听地址 (默认 0.0.0.0)
+#   STATIC_DIR        — 静态文件目录 (默认自动检测 ../frontend/)
 #
-# 可通过环境变量覆盖：
-#   set EASYCVR_UPSTREAM=http://13.238.254.66:18000
-#   set EASYCVR_PORT=8000
+# 本地开发用法:
+#   cd backend
+#   python server.py
+#   python server.py 9000
+#   浏览器打开 http://127.0.0.1:8000/admin_panel.html
+# ────────────────────────────────────────────────────────────────
 
 UPSTREAM = os.environ.get("EASYCVR_UPSTREAM", "http://13.238.254.66:18000").rstrip("/")
+LISTEN_HOST = os.environ.get("HOST", "0.0.0.0")
+
+
 def _pick_listen_port() -> int:
-    # 优先：命令行参数；其次：环境变量；最后：默认 8000
     if len(sys.argv) >= 2 and sys.argv[1].strip():
         try:
             return int(sys.argv[1].strip())
         except ValueError:
             raise ValueError(f"Invalid port: {sys.argv[1]!r}")
-    return int(os.environ.get("EASYCVR_PORT", "8000"))
+    return int(os.environ.get("PORT", os.environ.get("EASYCVR_PORT", "8000")))
 
 
 LISTEN_PORT = _pick_listen_port()
+
+
+def _resolve_static_dir() -> str:
+    env = os.environ.get("STATIC_DIR", "").strip()
+    if env:
+        p = pathlib.Path(env)
+        return str(p) if p.is_dir() else ""
+    candidate = pathlib.Path(__file__).resolve().parent.parent / "frontend"
+    return str(candidate) if candidate.is_dir() else ""
+
+
+STATIC_DIR = _resolve_static_dir()
 
 
 def _parse_upstream(upstream: str):
@@ -50,7 +67,6 @@ UP_SCHEME, UP_HOST, UP_PORT, UP_BASE_PATH = _parse_upstream(UPSTREAM)
 
 
 class ProxyHandler(SimpleHTTPRequestHandler):
-    # 代理这些前缀（EasyCVR 常用）
     PROXY_PREFIXES = (
         "/api/",
         "/hls/",
@@ -60,16 +76,25 @@ class ProxyHandler(SimpleHTTPRequestHandler):
         "/ws_flv/",
         "/ws_fmp4/",
         "/snap/",
-        # 官方播放器 SDK 及解码器/资源（很多环境需要带 cookie/token 才能访问）
         "/EasyPlayerPro/",
         "/crypto/",
     )
 
+    def __init__(self, *args, **kwargs):
+        if STATIC_DIR:
+            super().__init__(*args, directory=STATIC_DIR, **kwargs)
+        else:
+            super().__init__(*args, **kwargs)
+
     def _should_proxy(self, path: str) -> bool:
         return any(path.startswith(p) for p in self.PROXY_PREFIXES)
 
+    def _add_cors_headers(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+
     def _proxy(self):
-        # 将当前请求转发到上游
         parsed = urllib.parse.urlsplit(self.path)
         path = parsed.path
         query = parsed.query
@@ -81,28 +106,18 @@ class ProxyHandler(SimpleHTTPRequestHandler):
         conn_cls = http.client.HTTPSConnection if UP_SCHEME == "https" else http.client.HTTPConnection
         conn = conn_cls(UP_HOST, UP_PORT, timeout=30)
 
-        # 透传常用头；特别是 Range（FLV 探测/播放需要）
         hop_by_hop = {
-            "connection",
-            "keep-alive",
-            "proxy-authenticate",
-            "proxy-authorization",
-            "te",
-            "trailers",
-            "transfer-encoding",
-            "upgrade",
+            "connection", "keep-alive", "proxy-authenticate",
+            "proxy-authorization", "te", "trailers",
+            "transfer-encoding", "upgrade",
         }
         headers = {}
         for k, v in self.headers.items():
             lk = k.lower()
-            if lk in hop_by_hop:
-                continue
-            # Host 由 http.client 自动处理
-            if lk == "host":
+            if lk in hop_by_hop or lk == "host":
                 continue
             headers[k] = v
 
-        # 读取请求体（本项目主要 GET；这里兼容 POST/PUT）
         body = None
         if "Content-Length" in self.headers:
             try:
@@ -117,20 +132,13 @@ class ProxyHandler(SimpleHTTPRequestHandler):
             resp = conn.getresponse()
 
             self.send_response(resp.status, resp.reason)
-            # 复制响应头，并补上同源下的宽松缓存/类型
             for hk, hv in resp.getheaders():
                 lk = hk.lower()
-                if lk in hop_by_hop:
-                    continue
-                # 让浏览器更容易播放/调试
-                if lk == "access-control-allow-origin":
+                if lk in hop_by_hop or lk == "access-control-allow-origin":
                     continue
                 self.send_header(hk, hv)
 
-            # 同源访问时无需 CORS，但为了方便 debug 也允许
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Headers", "*")
-            self.send_header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+            self._add_cors_headers()
             self.end_headers()
 
             while True:
@@ -144,17 +152,30 @@ class ProxyHandler(SimpleHTTPRequestHandler):
             except Exception:
                 pass
 
+    def _send_json(self, code: int, msg: str):
+        import json
+        body = json.dumps({"status": code, "message": msg}).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self._add_cors_headers()
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_OPTIONS(self):
-        # 预检直接放行（同源下通常不会走到这里，但无害）
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+        self._add_cors_headers()
         self.end_headers()
 
     def do_GET(self):
+        if self.path.rstrip("/") == "/health":
+            return self._send_json(200, "ok")
         if self._should_proxy(urllib.parse.urlsplit(self.path).path):
             return self._proxy()
+        if self.path == "/":
+            return self._send_json(200, "Apex CCTV Backend is running. Please use the Vercel frontend to access this API.")
+        if not STATIC_DIR:
+            return self._send_json(404, "API proxy only. Frontend is served by Vercel.")
         return super().do_GET()
 
     def do_POST(self):
@@ -174,9 +195,14 @@ class ProxyHandler(SimpleHTTPRequestHandler):
 
 
 def main():
+    mode = "local dev (static + proxy)" if STATIC_DIR else "production (proxy only)"
+    print(f"Mode:     {mode}")
     print(f"Upstream: {UPSTREAM}")
-    print(f"Listening: http://127.0.0.1:{LISTEN_PORT}")
-    httpd = ThreadingHTTPServer(("127.0.0.1", LISTEN_PORT), ProxyHandler)
+    print(f"Listen:   http://{LISTEN_HOST}:{LISTEN_PORT}")
+    if STATIC_DIR:
+        print(f"Static:   {STATIC_DIR}")
+
+    httpd = ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), ProxyHandler)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -185,4 +211,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main() or 0)
-
